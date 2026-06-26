@@ -1,0 +1,13 @@
+# Secrets — ne JAMAIS committer de clés API
+.env
+*.key
+
+# Config locale de l'éditeur / harness
+.claude/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Dépendances (au cas où)
+node_modules/
