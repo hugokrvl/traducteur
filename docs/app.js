@@ -19,12 +19,17 @@ const DEFAULTS = {
   sttModel: 'whisper-large-v3-turbo',
   groqModel: 'llama-3.1-8b-instant',
   mistralModel: 'mistral-small-latest',
-  ttsEngine: 'browser',
+  ttsEngine: 'eleven',
   voiceURI: '',
   rate: 1.05,
   elevenKey: '',
   elevenVoice: 'XB0fDUnXU5powFXDhCwa',
   elevenModel: 'eleven_turbo_v2_5',
+  githubToken: '',
+  githubRepo: '',
+  githubFolder: 'enregistrements',
+  githubBranch: 'main',
+  recGapMin: 8,
   sens: 60,
   speakEnabled: true,
 };
@@ -56,7 +61,13 @@ let selectedVoice = null;
 let ttsCtx = null;                 // contexte audio dédié à la voix premium (ElevenLabs)
 const elevenQueue = [];            // file de lecture ElevenLabs (1 à la fois, dans l'ordre)
 let elevenPlaying = false;
-const history = [];                // historique exportable de la conversation
+let elevenDisabled = false;        // passe à true quand le quota gratuit est épuisé → voix navigateur
+// Enregistrement sur GitHub (aucune copie locale)
+const shaMap = {};                 // chemin de fichier → sha du dernier commit
+let rec = { path: null, content: '', hourKey: null, lastAt: 0 };
+let recTimer = null, recDirty = false;
+let flushChain = Promise.resolve();
+const REC_DEBOUNCE = 12000;
 
 // ───────────────────────────── Raccourcis DOM ──────────────────────────────
 const $ = (id) => document.getElementById(id);
@@ -108,6 +119,7 @@ function stop() {
   setRecording(false);
   setStatus('idle', sttQueue.length ? 'traitement…' : 'prêt');
   meterEl.style.width = '0%';
+  flush(); // sauvegarde finale de l'enregistrement sur GitHub
 }
 
 function onAudio(e) {
@@ -184,6 +196,7 @@ async function pump() {
 
       const french = await translate(text, language);
       const bubble = addBubble({ language, original: text, french });
+      recordEntry({ t: new Date(), language, original: text, french });
       speak(french, bubble);
     } catch (err) {
       toast('Erreur : ' + err.message);
@@ -246,8 +259,9 @@ async function fetchRetry(url, opts, tries = 3) {
     if (res.ok) return res;
     if ((res.status === 429 || res.status >= 500) && i < tries - 1) { await sleep(delay); delay *= 2; continue; }
     let msg = res.status + ' ' + res.statusText;
-    try { const j = await res.json(); if (j.error?.message) msg = j.error.message; } catch {}
-    throw new Error(msg);
+    try { const j = await res.json(); msg = j.error?.message || j.detail?.message || j.detail || j.message || msg; } catch {}
+    if (typeof msg !== 'string') msg = JSON.stringify(msg);
+    const err = new Error(msg); err.status = res.status; throw err;
   }
 }
 
@@ -256,7 +270,7 @@ async function fetchRetry(url, opts, tries = 3) {
 // ============================================================================
 function speak(text, bubbleEl) {
   if (!settings.speakEnabled || !text) return;
-  if (settings.ttsEngine === 'eleven' && settings.elevenKey) enqueueEleven(text, bubbleEl);
+  if (settings.ttsEngine === 'eleven' && settings.elevenKey && !elevenDisabled) enqueueEleven(text, bubbleEl);
   else browserSpeak(text, bubbleEl);
 }
 
@@ -289,7 +303,11 @@ async function pumpEleven() {
       const blob = await elevenTTS(text);
       await playBlob(blob, bubbleEl);
     } catch (err) {
-      toast('Voix premium : ' + err.message + ' → repli navigateur');
+      // Quota gratuit épuisé (401) ou crédits finis → on bascule définitivement
+      // sur la voix gratuite du navigateur pour le reste de la session.
+      const quota = err.status === 401 || /quota|credit|exceed|unusual/i.test(err.message || '');
+      if (quota) { elevenDisabled = true; toast('Quota ElevenLabs épuisé → voix gratuite activée 🔊'); }
+      else toast('Voix premium : ' + err.message + ' → repli navigateur');
       browserSpeak(text, bubbleEl);
     }
   }
@@ -362,36 +380,82 @@ function addBubble({ language, original, french, skipped }) {
     `<p class="french">${highlightNums(escapeHtml(french))}</p>`;
   transcriptEl.appendChild(div);
   transcriptEl.scrollTop = transcriptEl.scrollHeight;
-  history.push({ t: new Date(), language, original, french, skipped });
   return div;
 }
 
-// ── Export de la conversation (texte) ──
-function exportHistory() {
-  if (!history.length) { toast('Rien à exporter pour l’instant.'); return; }
-  const lines = ['Traducteur IA — conversation du ' + new Date().toLocaleString('fr-FR'), ''];
-  for (const h of history) {
-    const hh = h.t.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
-    const lang = (LANGS[h.language] || h.language || '').replace(/^\S+\s/, '').trim() || '—';
-    lines.push(`[${hh}] ${lang} : ${h.original}`);
-    lines.push(`→ ${h.french}`);
-    lines.push('');
-  }
-  const text = lines.join('\n');
-  const fname = 'traduction-' + new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-') + '.txt';
-  const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
-  const file = new File([blob], fname, { type: 'text/plain' });
-  if (navigator.canShare && navigator.canShare({ files: [file] })) {
-    navigator.share({ files: [file], title: 'Traduction' }).catch(() => downloadBlob(blob, fname));
-  } else {
-    downloadBlob(blob, fname);
-  }
+// ============================================================================
+// 4bis. ENREGISTREMENT SUR GITHUB (jamais de copie locale)
+//  - un fichier .txt par session, nommé enregistrement_<date>_<heure>.txt
+//  - nouveau fichier quand l'heure change OU après une longue pause (= nouveau contexte)
+//  - poussé sur le dépôt GitHub via l'API Contents (logique « comme Média »)
+// ============================================================================
+function recordingOn() {
+  return !!(settings.githubToken && settings.githubRepo && settings.githubRepo.includes('/'));
 }
-function downloadBlob(blob, fname) {
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob); a.download = fname;
-  document.body.appendChild(a); a.click(); a.remove();
-  setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+
+function recordEntry({ t, language, original, french }) {
+  if (!recordingOn()) return;
+  const hourKey = `${t.getFullYear()}-${t.getMonth()}-${t.getDate()}-${t.getHours()}`;
+  const gapMs = rec.lastAt ? t - rec.lastAt : 0;
+  const newFile = !rec.path || hourKey !== rec.hourKey || gapMs > (settings.recGapMin || 8) * 60000;
+  if (newFile) startNewFile(t);
+  const hh = t.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+  const lang = (LANGS[language] || language || '').replace(/^\S+\s/, '').trim() || '—';
+  rec.content += `[${hh}] ${lang} : ${original}\n→ ${french}\n\n`;
+  rec.lastAt = t; rec.hourKey = hourKey; recDirty = true;
+  clearTimeout(recTimer); recTimer = setTimeout(() => flush(), REC_DEBOUNCE);
+}
+
+function startNewFile(t) {
+  if (rec.path && recDirty) flush();           // on sauve d'abord l'ancien fichier en entier
+  const p = (n) => String(n).padStart(2, '0');
+  const stamp = `${t.getFullYear()}-${p(t.getMonth() + 1)}-${p(t.getDate())}_${p(t.getHours())}-${p(t.getMinutes())}`;
+  const folder = (settings.githubFolder || 'enregistrements').replace(/^\/+|\/+$/g, '');
+  rec.path = (folder ? folder + '/' : '') + `enregistrement_${stamp}.txt`;
+  rec.content = `Traducteur IA — enregistrement du ${t.toLocaleString('fr-FR')}\n\n`;
+}
+
+// Sauve le fichier courant EN ENTIER sur GitHub. Sérialisé (flushChain) pour ne
+// jamais avoir deux PUT concurrents sur le même fichier (sha périmé = 409).
+function flush(manual) {
+  if (!recDirty || !rec.path || !recordingOn()) { if (manual) toast('Rien à enregistrer.'); return flushChain; }
+  recDirty = false; clearTimeout(recTimer);
+  const path = rec.path, content = rec.content;  // snapshot synchrone (avant tout await)
+  flushChain = flushChain
+    .then(() => githubPut(path, content))
+    .then(() => { setStatusDot(true); if (manual) toast('Enregistré sur GitHub ✓'); })
+    .catch((err) => { recDirty = true; setStatusDot(false); toast('GitHub : ' + err.message); });
+  return flushChain;
+}
+
+async function githubPut(path, content) {
+  const [owner, repo] = settings.githubRepo.split('/');
+  const branch = settings.githubBranch || 'main';
+  const enc = path.split('/').map(encodeURIComponent).join('/');
+  const base = `https://api.github.com/repos/${owner}/${repo}/contents/${enc}`;
+  const headers = { Authorization: 'Bearer ' + settings.githubToken, Accept: 'application/vnd.github+json' };
+  if (shaMap[path] === undefined) {              // le fichier existe-t-il déjà ? (récupère son sha)
+    try { const g = await fetch(`${base}?ref=${branch}`, { headers }); shaMap[path] = g.ok ? (await g.json()).sha : null; }
+    catch { shaMap[path] = null; }
+  }
+  const body = { message: 'enregistrement ' + path.split('/').pop(), content: utf8ToB64(content), branch };
+  if (shaMap[path]) body.sha = shaMap[path];
+  const res = await fetch(base, { method: 'PUT', headers: { ...headers, 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  if (!res.ok) {
+    if (res.status === 409 || res.status === 422) delete shaMap[path];  // sha périmé → re-découverte
+    let m = res.status + ''; try { m = (await res.json()).message || m; } catch {}
+    throw new Error(m);
+  }
+  shaMap[path] = (await res.json()).content?.sha || null;
+}
+function utf8ToB64(s) { return btoa(unescape(encodeURIComponent(s))); }
+
+function openRecordings() {
+  if (!recordingOn()) { openSettings(); toast('Ajoute ton token + dépôt GitHub dans les réglages ⚙️'); return; }
+  flush(true);
+  const [owner, repo] = settings.githubRepo.split('/');
+  const folder = (settings.githubFolder || 'enregistrements').replace(/^\/+|\/+$/g, '');
+  window.open(`https://github.com/${owner}/${repo}/tree/${settings.githubBranch || 'main'}/${folder}`, '_blank');
 }
 function highlightNums(s) { return s.replace(/(\d[\d  .,]*\d|\d)/g, '<b class="num">$1</b>'); }
 function escapeHtml(s) { return s.replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c])); }
@@ -443,6 +507,7 @@ function setRecording(on) {
   recordBtn.querySelector('.rec-label').textContent = on ? 'Arrêter' : 'Démarrer';
 }
 function updateMeter(rms) { meterEl.style.width = Math.min(100, rms * 600) + '%'; }
+function setStatusDot(ok) { const b = $('btn-export'); if (b) b.style.color = ok ? 'var(--ok)' : ''; }
 function updateQueue() {
   const n = sttQueue.length + (pumping ? 1 : 0);
   queueEl.textContent = n;
@@ -476,6 +541,10 @@ function fillForm() {
   $('elevenKey').value = settings.elevenKey;
   $('elevenVoice').value = settings.elevenVoice;
   $('elevenModel').value = settings.elevenModel;
+  $('githubToken').value = settings.githubToken;
+  $('githubRepo').value = settings.githubRepo;
+  $('githubFolder').value = settings.githubFolder;
+  $('recGap').value = settings.recGapMin; $('gapVal').textContent = settings.recGapMin;
   $('rate').value = settings.rate; $('rateVal').textContent = settings.rate;
   $('sens').value = settings.sens; $('sensVal').textContent = settings.sens;
   $('speakEnabled').checked = settings.speakEnabled;
@@ -493,6 +562,10 @@ function readForm() {
   settings.elevenKey = $('elevenKey').value.trim();
   settings.elevenVoice = $('elevenVoice').value;
   settings.elevenModel = $('elevenModel').value;
+  settings.githubToken = $('githubToken').value.trim();
+  settings.githubRepo = $('githubRepo').value.trim().replace(/^https?:\/\/github\.com\//, '').replace(/\.git$/, '');
+  settings.githubFolder = $('githubFolder').value.trim() || 'enregistrements';
+  settings.recGapMin = Number($('recGap').value);
   settings.rate = Number($('rate').value);
   settings.sens = Number($('sens').value);
   settings.speakEnabled = $('speakEnabled').checked;
@@ -540,10 +613,11 @@ $('testVoice').addEventListener('click', () => {
   if (settings.ttsEngine === 'eleven' && settings.elevenKey) enqueueEleven(phrase);
   else browserSpeak(phrase);
 });
-$('btn-export').addEventListener('click', exportHistory);
+$('btn-export').addEventListener('click', openRecordings);
+$('recGap') && $('recGap').addEventListener('input', (e) => $('gapVal').textContent = e.target.value);
 $('clear').addEventListener('click', () => {
+  // efface seulement l'écran ; l'enregistrement GitHub n'est pas touché
   transcriptEl.innerHTML = '<div class="empty-state"><p>🎙️ Prêt. Appuie sur Démarrer.</p></div>';
-  history.length = 0;
 });
 
 // ───────────────────────────── Démarrage ───────────────────────────────────

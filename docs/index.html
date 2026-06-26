@@ -21,7 +21,7 @@
     </div>
     <div class="top-actions">
       <span id="status" class="status idle">prêt</span>
-      <button id="btn-export" class="icon-btn" title="Exporter la conversation" aria-label="Exporter">📄</button>
+      <button id="btn-export" class="icon-btn" title="Voir les enregistrements GitHub" aria-label="Enregistrements">📼</button>
       <button id="btn-settings" class="icon-btn" title="Réglages" aria-label="Réglages">⚙️</button>
     </div>
   </header>
@@ -47,6 +47,14 @@
       <span>Clé API Mistral <a href="https://console.mistral.ai/api-keys" target="_blank" rel="noopener">(gratuite ↗)</a></span>
       <input type="password" id="mistralKey" placeholder="..." autocomplete="off" />
     </label>
+
+    <div class="field gh-box">
+      <span>📼 Enregistrement sur GitHub <a href="https://github.com/settings/tokens?type=beta" target="_blank" rel="noopener">(token ↗)</a></span>
+      <input type="password" id="githubToken" placeholder="Token GitHub (fine-grained · Contents: write)" autocomplete="off" />
+      <input type="text" id="githubRepo" placeholder="dépôt — ex. hugokrvl/traducteur-prive" autocomplete="off" />
+      <input type="text" id="githubFolder" placeholder="dossier (ex. enregistrements)" autocomplete="off" />
+      <small class="hint">⚠️ Utilise un dépôt <b>PRIVÉ</b>, sinon tes conversations seraient publiques. Laisse vide pour ne rien enregistrer — rien n'est jamais stocké sur le téléphone ni l'ordinateur.</small>
+    </div>
 
     <details class="advanced">
       <summary>Options avancées</summary>
@@ -113,6 +121,12 @@
         <span>Sensibilité du micro : <b id="sensVal">60</b></span>
         <input type="range" id="sens" min="0" max="100" step="1" value="60" />
         <small class="hint">Plus haut = capte les voix plus faibles (mais aussi plus de bruit).</small>
+      </label>
+
+      <label class="field">
+        <span>Nouveau fichier après une pause de : <b id="gapVal">8</b> min</span>
+        <input type="range" id="recGap" min="2" max="60" step="1" value="8" />
+        <small class="hint">Un nouveau .txt est aussi créé automatiquement à chaque changement d'heure.</small>
       </label>
 
       <label class="check">

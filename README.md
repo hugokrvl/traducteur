@@ -12,6 +12,10 @@ Une web-app **100 % gratuite, sans serveur**, qui écoute la personne en face de
   même pendant que la voix française parle. Les phrases sont mises en file et traduites dans l'ordre.
 - **Latence ~1,5 à 3 s** après la fin de chaque phrase.
 - **Deux modes** : *Phrase par phrase* (attend une pause, fiable — par défaut) ou *Continu (~3 s)* (plus réactif).
+- **Voix premium par défaut** (ElevenLabs) avec **repli automatique** sur la voix gratuite du
+  navigateur dès que le quota gratuit est épuisé.
+- **Enregistrement automatique sur GitHub** : chaque conversation est sauvegardée dans un fichier
+  `.txt` poussé sur ton dépôt (jamais sur le téléphone ni l'ordinateur). Voir §4.
 - Tourne dans **Safari/Chrome**, s'installe via *« Ajouter à l'écran d'accueil »* → comme une vraie app.
 
 > ⚠️ **Utilise des écouteurs.** Sinon le micro capte la voix française du haut-parleur.
@@ -44,6 +48,31 @@ Tu peux **réutiliser la clé Groq de ton projet Média** : c'est la même.
 
 ---
 
+## 4. Enregistrement des conversations sur GitHub
+
+Les conversations sont sauvegardées **uniquement sur GitHub** (jamais sur le téléphone/ordinateur),
+exactement comme la logique du projet Média (push via l'API GitHub avec un token).
+
+> 🔒 **Confidentialité — important.** Le dépôt `traducteur` (celui de l'app) est **public**
+> car GitHub Pages gratuit l'exige. **Ne mets PAS tes enregistrements dans un dépôt public.**
+> Crée un **dépôt PRIVÉ séparé** (ex. `traducteur-prive`) réservé aux conversations.
+
+**Mise en place :**
+1. Crée un **dépôt PRIVÉ** sur GitHub, ex. `hugokrvl/traducteur-prive`.
+2. Crée un **token fine-grained** : https://github.com/settings/tokens?type=beta →
+   *Generate new token* → **Repository access : Only select repositories** → choisis `traducteur-prive` →
+   *Permissions → Repository permissions → **Contents : Read and write*** → génère et copie le token.
+3. Dans l'app : ⚙️ → section **📼 Enregistrement sur GitHub** → colle le **token**, le **dépôt**
+   (`hugokrvl/traducteur-prive`) et le **dossier** (`enregistrements`) → Enregistrer.
+
+**Fonctionnement :**
+- Un fichier `enregistrements/enregistrement_AAAA-MM-JJ_HH-MM.txt` par session.
+- **Nouveau fichier automatiquement** quand l'**heure change** ou après une **pause** (= nouveau
+  contexte ; durée réglable dans Options avancées, défaut 8 min).
+- Sauvegarde en continu (toutes les ~12 s) + à chaque arrêt. Le bouton **📼** force une sauvegarde
+  et ouvre le dossier des enregistrements sur GitHub.
+- **Aucun token = aucun enregistrement** (rien n'est jamais stocké en local).
+
 ## Réglages utiles (⚙️ → Options avancées)
 
 | Réglage | À quoi ça sert |
@@ -65,8 +94,11 @@ Tout est **côté navigateur** (`docs/`), aucun backend :
 - Chaque phrase part chez **Groq Whisper** (`/openai/v1/audio/transcriptions`,
   `verbose_json` → texte **+ langue détectée**).
 - Le texte est traduit en français via l'API chat **Groq** ou **Mistral** (compatibles OpenAI).
-- La traduction est lue par `speechSynthesis` (voix du système, gratuite, instantanée) et affichée.
-- La clé API est stockée **uniquement sur l'appareil** (`localStorage`) et n'est envoyée qu'à Groq/Mistral.
+- La traduction est lue soit par **ElevenLabs** (voix premium, repli auto sur le navigateur si quota
+  épuisé), soit par `speechSynthesis` (voix du système, gratuite), puis affichée à l'écran.
+- Les conversations sont poussées sur GitHub via l'**API Contents** (`PUT …/contents/{path}` avec un token).
+- Toutes les clés/tokens sont stockés **uniquement sur l'appareil** (`localStorage`) et envoyés
+  seulement à leurs services respectifs (Groq, Mistral, ElevenLabs, GitHub).
 
 ### Limites connues
 - iOS met parfois la synthèse vocale en pause si l'app passe en arrière-plan (garde l'écran allumé — un *Wake Lock* est demandé).

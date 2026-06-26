@@ -74,6 +74,8 @@ body{
 .advanced[open]{display:flex;flex-direction:column;gap:12px;}
 .advanced[open] summary{margin-bottom:6px;}
 .legal{font-size:11px;color:var(--dim);line-height:1.5;margin:0;}
+.gh-box,.eleven-box{border:1px solid var(--line);border-radius:12px;padding:12px;background:var(--bg3);}
+.gh-box input{margin-top:2px;}
 
 .btn{
   border:none;border-radius:12px;padding:13px;font-size:15px;font-weight:700;cursor:pointer;
