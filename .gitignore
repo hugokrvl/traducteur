@@ -1,6 +1,10 @@
 # Secrets — ne JAMAIS committer de clés API
 .env
 *.key
+NE PAS POUSSER.txt
+*POUSSER*
+*secret*
+*token*
 
 # Config locale de l'éditeur / harness
 .claude/

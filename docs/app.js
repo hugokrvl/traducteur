@@ -431,14 +431,19 @@ function flush(manual) {
 async function githubPut(path, content) {
   const [owner, repo] = settings.githubRepo.split('/');
   const branch = settings.githubBranch || 'main';
+  // 'main' = branche par défaut → on NE l'envoie PAS : GitHub utilise (ou crée) la branche
+  // par défaut tout seul, ce qui marche même sur un dépôt vide. On ne force la branche
+  // que si l'utilisateur en a configuré une autre.
+  const custom = branch && branch !== 'main';
   const enc = path.split('/').map(encodeURIComponent).join('/');
   const base = `https://api.github.com/repos/${owner}/${repo}/contents/${enc}`;
   const headers = { Authorization: 'Bearer ' + settings.githubToken, Accept: 'application/vnd.github+json' };
   if (shaMap[path] === undefined) {              // le fichier existe-t-il déjà ? (récupère son sha)
-    try { const g = await fetch(`${base}?ref=${branch}`, { headers }); shaMap[path] = g.ok ? (await g.json()).sha : null; }
+    try { const g = await fetch(base + (custom ? `?ref=${branch}` : ''), { headers }); shaMap[path] = g.ok ? (await g.json()).sha : null; }
     catch { shaMap[path] = null; }
   }
-  const body = { message: 'enregistrement ' + path.split('/').pop(), content: utf8ToB64(content), branch };
+  const body = { message: 'enregistrement ' + path.split('/').pop(), content: utf8ToB64(content) };
+  if (custom) body.branch = branch;
   if (shaMap[path]) body.sha = shaMap[path];
   const res = await fetch(base, { method: 'PUT', headers: { ...headers, 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
   if (!res.ok) {
