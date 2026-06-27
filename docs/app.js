@@ -22,7 +22,7 @@ const DEFAULTS = {
   mistralModel: 'mistral-small-latest',
   ttsEngine: 'eleven',
   voiceURI: '',
-  rate: 1.05,
+  rate: 1.0,
   elevenKey: '',
   elevenVoice: 'XB0fDUnXU5powFXDhCwa',
   elevenModel: 'eleven_turbo_v2_5',
@@ -347,7 +347,8 @@ async function elevenTTS(text) {
     body: JSON.stringify({
       text,
       model_id: settings.elevenModel,
-      voice_settings: { stability: 0.4, similarity_boost: 0.8 },
+      // speed : ElevenLabs accepte 0.7–1.2 → on borne la valeur du curseur
+      voice_settings: { stability: 0.4, similarity_boost: 0.8, speed: Math.min(1.2, Math.max(0.7, Number(settings.rate) || 1)) },
     }),
   });
   return res.blob();
