@@ -195,21 +195,12 @@
     <div class="login-card">
       <div class="login-logo">🎧</div>
       <h1>Traducteur</h1>
-      <p class="login-sub">Qui es-tu ?</p>
-      <div id="profiles" class="profiles"></div>
+      <p class="login-sub">Connexion</p>
+      <input type="text" id="login-id" placeholder="Identifiant" autocomplete="off" autocapitalize="none" autocorrect="off" spellcheck="false" />
+      <input type="password" id="login-pw" placeholder="Mot de passe" autocomplete="off" />
+      <p id="login-err" class="pwd-err"></p>
+      <button id="login-go" class="btn primary">Se connecter</button>
       <button id="guest-btn" class="guest">👤&nbsp; Invité</button>
-    </div>
-  </div>
-
-  <!-- Modale mot de passe -->
-  <div id="pwd" class="modal hidden">
-    <div class="modal-card">
-      <button class="modal-x" data-close="pwd" aria-label="Fermer">✕</button>
-      <div class="modal-ico">🔒</div>
-      <h2 id="pwd-title">Mot de passe</h2>
-      <input type="password" id="pwd-input" placeholder="Mot de passe" autocomplete="off" />
-      <p id="pwd-err" class="pwd-err"></p>
-      <button id="pwd-go" class="btn primary">Entrer</button>
     </div>
   </div>
 

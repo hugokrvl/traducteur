@@ -589,8 +589,6 @@ function syncTtsUI() {
 // ============================================================================
 // 7ter. CONNEXION / PROFILS (clés chiffrées AES, déverrouillées par mot de passe)
 // ============================================================================
-let pendingProfile = null;
-
 function fromB64(str) { const bin = atob(str); const a = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) a[i] = bin.charCodeAt(i); return a; }
 async function deriveKey(password, salt) {
   const base = await crypto.subtle.importKey('raw', new TextEncoder().encode(password), 'PBKDF2', false, ['deriveKey']);
@@ -604,43 +602,26 @@ async function decryptProfile(blob, password) {
 
 function showModal(id) { $(id).classList.remove('hidden'); }
 function hideModal(id) { $(id).classList.add('hidden'); }
-function showLogin() { renderProfiles(); $('login').classList.remove('hidden'); }
+function showLogin() { $('login-id').value = ''; $('login-pw').value = ''; $('login-err').textContent = ''; $('login').classList.remove('hidden'); }
 function hideLogin() { $('login').classList.add('hidden'); }
 
-function renderProfiles() {
-  $('profiles').innerHTML = (window.PROFILES || []).map((p, i) =>
-    `<button class="profile${p.blob ? '' : ' todo'}" data-i="${i}">` +
-    `<span class="ava">${escapeHtml((p.name[0] || '?').toUpperCase())}</span>` +
-    `<span class="pname">${escapeHtml(p.name)}</span></button>`
-  ).join('');
-}
-
-function chooseProfile(i) {
-  const p = (window.PROFILES || [])[i];
-  if (!p) return;
-  if (!p.blob) { toast('Profil « ' + p.name + ' » pas encore configuré.'); return; }
-  pendingProfile = p;
-  $('pwd-title').textContent = p.name;
-  $('pwd-err').textContent = '';
-  $('pwd-input').value = '';
-  showModal('pwd');
-  setTimeout(() => $('pwd-input').focus(), 60);
-}
-
-async function submitPassword() {
-  if (!pendingProfile) return;
-  const pw = $('pwd-input').value;
-  if (!pw) return;
+// Connexion par identifiant (= nom du profil) + mot de passe. Aucun nom n'est
+// affiché : un identifiant inconnu et un mauvais mot de passe donnent la même erreur.
+async function submitLogin() {
+  const id = $('login-id').value.trim().toLowerCase();
+  const pw = $('login-pw').value;
+  if (!id || !pw) return;
+  const fail = () => { $('login-err').textContent = 'Identifiant ou mot de passe incorrect'; };
+  const p = (window.PROFILES || []).find((x) => x.name.toLowerCase() === id && x.blob);
+  if (!p) { fail(); return; }
   try {
-    const data = await decryptProfile(pendingProfile.blob, pw);
+    const data = await decryptProfile(p.blob, pw);
     Object.assign(settings, data);
-    localStorage.setItem('tr_session', pendingProfile.name);
+    localStorage.setItem('tr_session', p.name);
     save(); fillForm(); syncProviderUI(); syncTtsUI(); loadVoices();
-    hideModal('pwd'); hideLogin(); switchPage('translate');
-    toast('Bienvenue ' + pendingProfile.name + ' 👋');
-  } catch {
-    $('pwd-err').textContent = 'Mot de passe incorrect';
-  }
+    hideLogin(); switchPage('translate');
+    toast('Bienvenue ' + p.name + ' 👋');
+  } catch { fail(); }
 }
 
 function enterGuest() {
@@ -692,10 +673,10 @@ $('clear').addEventListener('click', () => {
 });
 
 // ── Connexion ──
-$('profiles').addEventListener('click', (e) => { const b = e.target.closest('.profile'); if (b) chooseProfile(Number(b.dataset.i)); });
+$('login-go').addEventListener('click', submitLogin);
+$('login-id').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('login-pw').focus(); });
+$('login-pw').addEventListener('keydown', (e) => { if (e.key === 'Enter') submitLogin(); });
 $('guest-btn').addEventListener('click', enterGuest);
-$('pwd-go').addEventListener('click', submitPassword);
-$('pwd-input').addEventListener('keydown', (e) => { if (e.key === 'Enter') submitPassword(); });
 $('help-groq').addEventListener('click', () => showModal('help'));
 $('logout').addEventListener('click', logout);
 document.querySelectorAll('[data-close]').forEach((b) => b.addEventListener('click', () => hideModal(b.dataset.close)));
