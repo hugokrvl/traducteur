@@ -87,6 +87,27 @@ Rien n'est jamais stocké sur le téléphone ni l'ordinateur.
   conversations avec. Toi, tu les consultes dans le tableau Supabase (connecté).
 - Tant que `config.js` est vide → aucun enregistrement (l'app marche quand même pour la traduction).
 
+## 5. Écran de connexion & profils (clés chiffrées)
+
+À la première ouverture (ou si la mémoire du navigateur est effacée), un **écran de connexion**
+s'affiche : on choisit un **profil** (Hugo, Julia, Erwan, Caroline) ou **Invité**.
+
+- **Profils** : chacun a ses clés API **chiffrées** (AES-256, PBKDF2) déverrouillées par un
+  **mot de passe**. Les clés n'apparaissent **jamais en clair** — ni dans le code, ni à l'écran —
+  et les robots/GitHub ne trouvent rien d'exploitable.
+- **Invité** : on colle ses propres clés, avec un bouton **« ? »** qui ouvre un guide pour obtenir
+  une clé Groq gratuite.
+- **Changer de profil** : bouton en bas des Réglages (efface les clés de l'appareil, revient à la connexion).
+
+### Créer / modifier un profil (toi uniquement)
+1. Ouvre **`/setup.html`** (ex. `https://hugokrvl.github.io/traducteur/setup.html`).
+2. Entre le **nom**, un **mot de passe**, la **clé Groq** (+ ElevenLabs / Mistral si besoin).
+3. Clique **Générer** → copie la ligne produite.
+4. Colle-la dans `docs/profiles.js` à la place de l'entrée du même nom, puis pousse sur GitHub.
+
+> Tes clés sont chiffrées **dans ton navigateur** par `setup.html` : elles ne transitent nulle part.
+> Un profil non configuré (`blob: null`) s'affiche grisé « à configurer ».
+
 ## Réglages utiles (⚙️ → Options avancées)
 
 | Réglage | À quoi ça sert |

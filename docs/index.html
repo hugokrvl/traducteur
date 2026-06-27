@@ -63,7 +63,7 @@
         <div class="settings-scroll">
 
           <label class="field">
-            <span>Clé API Groq <a href="https://console.groq.com/keys" target="_blank" rel="noopener">(gratuite ↗)</a></span>
+            <span>Clé API Groq <a href="https://console.groq.com/keys" target="_blank" rel="noopener">(gratuite ↗)</a> <button type="button" id="help-groq" class="help-q" aria-label="Comment obtenir une clé">?</button></span>
             <input type="password" id="groqKey" placeholder="gsk_..." autocomplete="off" />
             <small class="hint">Indispensable pour la traduction. Collée une seule fois, gardée sur l'appareil.</small>
           </label>
@@ -167,6 +167,7 @@
           </details>
 
           <button id="btn-save" class="btn primary">Enregistrer</button>
+          <button id="logout" class="btn ghost">Changer de profil</button>
         </div>
       </section>
 
@@ -189,9 +190,51 @@
     </nav>
   </div>
 
+  <!-- ═══════════════ Écran de CONNEXION ═══════════════ -->
+  <div id="login" class="login hidden">
+    <div class="login-card">
+      <div class="login-logo">🎧</div>
+      <h1>Traducteur</h1>
+      <p class="login-sub">Qui es-tu ?</p>
+      <div id="profiles" class="profiles"></div>
+      <button id="guest-btn" class="guest">👤&nbsp; Invité</button>
+    </div>
+  </div>
+
+  <!-- Modale mot de passe -->
+  <div id="pwd" class="modal hidden">
+    <div class="modal-card">
+      <button class="modal-x" data-close="pwd" aria-label="Fermer">✕</button>
+      <div class="modal-ico">🔒</div>
+      <h2 id="pwd-title">Mot de passe</h2>
+      <input type="password" id="pwd-input" placeholder="Mot de passe" autocomplete="off" />
+      <p id="pwd-err" class="pwd-err"></p>
+      <button id="pwd-go" class="btn primary">Entrer</button>
+    </div>
+  </div>
+
+  <!-- Modale guide « obtenir une clé Groq » -->
+  <div id="help" class="modal hidden">
+    <div class="modal-card">
+      <button class="modal-x" data-close="help" aria-label="Fermer">✕</button>
+      <div class="modal-ico">🔑</div>
+      <h2>Obtenir une clé Groq</h2>
+      <p class="modal-sub">Gratuit, ~2 min, sans carte bancaire.</p>
+      <ol class="help-steps">
+        <li>Ouvre <a href="https://console.groq.com/keys" target="_blank" rel="noopener">console.groq.com/keys</a> et connecte-toi (un compte Google suffit).</li>
+        <li>Clique sur <b>Create API Key</b>, donne-lui un nom, valide.</li>
+        <li>Copie la clé affichée (elle commence par <code>gsk_…</code>).</li>
+        <li>Reviens ici, colle-la dans <b>Clé API Groq</b>, puis <b>Enregistrer</b>.</li>
+      </ol>
+      <p class="hint">La clé reste sur ton appareil et n'est envoyée qu'à Groq.</p>
+      <button class="btn primary" data-close="help">Compris 👍</button>
+    </div>
+  </div>
+
   <div id="toast" class="toast hidden"></div>
 
   <script src="config.js"></script>
+  <script src="profiles.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

@@ -587,6 +587,75 @@ function syncTtsUI() {
 }
 
 // ============================================================================
+// 7ter. CONNEXION / PROFILS (clés chiffrées AES, déverrouillées par mot de passe)
+// ============================================================================
+let pendingProfile = null;
+
+function fromB64(str) { const bin = atob(str); const a = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) a[i] = bin.charCodeAt(i); return a; }
+async function deriveKey(password, salt) {
+  const base = await crypto.subtle.importKey('raw', new TextEncoder().encode(password), 'PBKDF2', false, ['deriveKey']);
+  return crypto.subtle.deriveKey({ name: 'PBKDF2', salt, iterations: 150000, hash: 'SHA-256' }, base, { name: 'AES-GCM', length: 256 }, false, ['decrypt']);
+}
+async function decryptProfile(blob, password) {
+  const key = await deriveKey(password, fromB64(blob.salt));
+  const pt = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: fromB64(blob.iv) }, key, fromB64(blob.data));
+  return JSON.parse(new TextDecoder().decode(pt));
+}
+
+function showModal(id) { $(id).classList.remove('hidden'); }
+function hideModal(id) { $(id).classList.add('hidden'); }
+function showLogin() { renderProfiles(); $('login').classList.remove('hidden'); }
+function hideLogin() { $('login').classList.add('hidden'); }
+
+function renderProfiles() {
+  $('profiles').innerHTML = (window.PROFILES || []).map((p, i) =>
+    `<button class="profile${p.blob ? '' : ' todo'}" data-i="${i}">` +
+    `<span class="ava">${escapeHtml((p.name[0] || '?').toUpperCase())}</span>` +
+    `<span class="pname">${escapeHtml(p.name)}</span></button>`
+  ).join('');
+}
+
+function chooseProfile(i) {
+  const p = (window.PROFILES || [])[i];
+  if (!p) return;
+  if (!p.blob) { toast('Profil « ' + p.name + ' » pas encore configuré.'); return; }
+  pendingProfile = p;
+  $('pwd-title').textContent = p.name;
+  $('pwd-err').textContent = '';
+  $('pwd-input').value = '';
+  showModal('pwd');
+  setTimeout(() => $('pwd-input').focus(), 60);
+}
+
+async function submitPassword() {
+  if (!pendingProfile) return;
+  const pw = $('pwd-input').value;
+  if (!pw) return;
+  try {
+    const data = await decryptProfile(pendingProfile.blob, pw);
+    Object.assign(settings, data);
+    localStorage.setItem('tr_session', pendingProfile.name);
+    save(); fillForm(); syncProviderUI(); syncTtsUI(); loadVoices();
+    hideModal('pwd'); hideLogin(); switchPage('translate');
+    toast('Bienvenue ' + pendingProfile.name + ' 👋');
+  } catch {
+    $('pwd-err').textContent = 'Mot de passe incorrect';
+  }
+}
+
+function enterGuest() {
+  localStorage.setItem('tr_session', 'invité');
+  hideLogin(); switchPage('settings'); showModal('help');
+}
+
+function logout() {
+  localStorage.removeItem('tr_session');
+  settings = { ...DEFAULTS };     // on efface les clés/réglages de cet appareil
+  save(); fillForm(); syncProviderUI(); syncTtsUI();
+  showLogin();
+}
+
+// ============================================================================
 // 8. ÉVÉNEMENTS
 // ============================================================================
 recordBtn.addEventListener('click', () => (running ? stop() : start()));
@@ -622,10 +691,24 @@ $('clear').addEventListener('click', () => {
   $('subs').innerHTML = '<div class="hint-empty"><p class="big">Prêt à traduire</p><p>Touche le bouton bleu et laisse la personne parler.</p></div>';
 });
 
+// ── Connexion ──
+$('profiles').addEventListener('click', (e) => { const b = e.target.closest('.profile'); if (b) chooseProfile(Number(b.dataset.i)); });
+$('guest-btn').addEventListener('click', enterGuest);
+$('pwd-go').addEventListener('click', submitPassword);
+$('pwd-input').addEventListener('keydown', (e) => { if (e.key === 'Enter') submitPassword(); });
+$('help-groq').addEventListener('click', () => showModal('help'));
+$('logout').addEventListener('click', logout);
+document.querySelectorAll('[data-close]').forEach((b) => b.addEventListener('click', () => hideModal(b.dataset.close)));
+
 // ───────────────────────────── Démarrage ───────────────────────────────────
 fillForm();
 loadVoices();
-if (!settings.groqKey) openSettings();
+if (localStorage.getItem('tr_session')) {        // déjà connecté sur cet appareil
+  hideLogin();
+  if (!settings.groqKey) switchPage('settings');
+} else {                                          // 1re fois / mémoire effacée → connexion
+  showLogin();
+}
 
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('sw.js').catch(() => {});

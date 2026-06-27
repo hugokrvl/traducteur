@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="robots" content="noindex, nofollow" />
+  <title>Configurer un profil — Traducteur</title>
+  <style>
+    :root{--accent:#1f7bff;--ink:#0f1a2b;--dim:#6c7689;--line:#e7ebf2;--soft:#f4f7fb;--ok:#12b66a;}
+    *{box-sizing:border-box;}
+    body{margin:0;background:#eef2f9;color:var(--ink);font-family:-apple-system,Segoe UI,Roboto,sans-serif;
+      display:flex;justify-content:center;padding:24px;}
+    .card{width:100%;max-width:560px;background:#fff;border:1px solid var(--line);border-radius:20px;
+      padding:26px;box-shadow:0 18px 50px rgba(16,24,40,.10);}
+    h1{font-size:22px;margin:0 0 4px;}
+    .sub{color:var(--dim);font-size:14px;margin:0 0 20px;line-height:1.5;}
+    label{display:block;font-size:13px;font-weight:700;margin:14px 0 6px;}
+    input,select{width:100%;padding:12px;border:1px solid var(--line);border-radius:11px;font-size:15px;background:var(--soft);}
+    .row{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
+    small{display:block;color:var(--dim);font-weight:400;font-size:12px;margin-top:4px;}
+    button{margin-top:22px;width:100%;padding:14px;border:none;border-radius:13px;background:var(--accent);
+      color:#fff;font-size:15px;font-weight:700;cursor:pointer;}
+    .out{margin-top:18px;display:none;}
+    .out.show{display:block;}
+    textarea{width:100%;min-height:120px;padding:12px;border:1px solid var(--line);border-radius:11px;
+      font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px;background:#0f1a2b;color:#d7e3f4;}
+    .ok{color:var(--ok);font-weight:700;font-size:14px;margin-top:10px;}
+    .warn{background:#fff7ec;border:1px solid #f0dcb0;border-radius:11px;padding:12px;font-size:13px;color:#7a5b1e;line-height:1.5;margin-bottom:18px;}
+    code{background:var(--soft);padding:1px 6px;border-radius:6px;}
+  </style>
+</head>
+<body>
+  <main class="card">
+    <h1>🔒 Configurer un profil</h1>
+    <p class="sub">Génère le bloc <b>chiffré</b> d'un profil. Tes clés sont chiffrées <b>dans ton navigateur</b> : elles n'apparaissent jamais en clair et ne sont envoyées nulle part.</p>
+
+    <div class="warn">Cet outil ne sert qu'à TOI. Une fois le bloc généré, colle-le dans <code>docs/profiles.js</code>, puis pousse sur GitHub. Ne partage jamais cette page avec le mot de passe.</div>
+
+    <label>Nom du profil</label>
+    <input id="name" placeholder="Hugo" />
+
+    <label>Mot de passe du profil <small>c'est ce que la personne tapera pour se connecter</small></label>
+    <input id="password" type="text" placeholder="choisis un mot de passe" />
+
+    <label>Clé API Groq <small>obligatoire (gsk_...)</small></label>
+    <input id="groqKey" type="text" placeholder="gsk_..." />
+
+    <label>Clé API ElevenLabs <small>optionnel (sk_...) — laisser vide = voix gratuite du navigateur</small></label>
+    <input id="elevenKey" type="text" placeholder="sk_..." />
+
+    <div class="row">
+      <div>
+        <label>Moteur de traduction</label>
+        <select id="provider"><option value="groq">Groq · Llama</option><option value="mistral">Mistral</option></select>
+      </div>
+      <div>
+        <label>Voix</label>
+        <select id="ttsEngine"><option value="eleven">ElevenLabs</option><option value="browser">Navigateur</option></select>
+      </div>
+    </div>
+
+    <label>Clé API Mistral <small>optionnel — seulement si moteur Mistral</small></label>
+    <input id="mistralKey" type="text" placeholder="..." />
+
+    <button id="gen">Générer le profil chiffré</button>
+
+    <div class="out" id="out">
+      <p class="ok">✓ Profil chiffré. Copie cette ligne et remplace l'entrée correspondante dans <code>profiles.js</code> :</p>
+      <textarea id="result" readonly></textarea>
+    </div>
+  </main>
+
+  <script>
+    const $ = (id) => document.getElementById(id);
+    const b64 = (a) => { let s = ''; new Uint8Array(a).forEach((b) => s += String.fromCharCode(b)); return btoa(s); };
+
+    async function encryptProfile(obj, password) {
+      const enc = new TextEncoder();
+      const salt = crypto.getRandomValues(new Uint8Array(16));
+      const iv = crypto.getRandomValues(new Uint8Array(12));
+      const base = await crypto.subtle.importKey('raw', enc.encode(password), 'PBKDF2', false, ['deriveKey']);
+      const key = await crypto.subtle.deriveKey({ name: 'PBKDF2', salt, iterations: 150000, hash: 'SHA-256' },
+        base, { name: 'AES-GCM', length: 256 }, false, ['encrypt']);
+      const ct = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, enc.encode(JSON.stringify(obj)));
+      return { salt: b64(salt), iv: b64(iv), data: b64(ct) };
+    }
+
+    $('gen').addEventListener('click', async () => {
+      const name = $('name').value.trim();
+      const password = $('password').value;
+      const groqKey = $('groqKey').value.trim();
+      if (!name || !password || !groqKey) { alert('Nom, mot de passe et clé Groq sont obligatoires.'); return; }
+
+      // Réglages embarqués dans le profil (on n'inclut que ce qui est rempli)
+      const data = { groqKey, provider: $('provider').value, ttsEngine: $('ttsEngine').value };
+      if ($('elevenKey').value.trim()) data.elevenKey = $('elevenKey').value.trim();
+      if ($('mistralKey').value.trim()) data.mistralKey = $('mistralKey').value.trim();
+
+      const blob = await encryptProfile(data, password);
+      const line = `  { name: ${JSON.stringify(name)}, blob: ${JSON.stringify(blob)} },`;
+      $('result').value = line;
+      $('out').classList.add('show');
+      $('result').select();
+    });
+  </script>
+</body>
+</html>

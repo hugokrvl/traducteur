@@ -170,6 +170,67 @@ body{
 .tab svg{width:24px;height:24px;}
 .tab.active{color:var(--accent);}
 
+/* ═══════════ Écran de connexion ═══════════ */
+.login{
+  position:fixed;inset:0;z-index:40;display:grid;place-items:center;padding:24px;
+  background:
+    radial-gradient(1000px 520px at 80% -10%, var(--accent-soft) 0%, rgba(233,241,255,0) 55%),
+    linear-gradient(180deg,#ffffff 0%, #eef3fb 100%);
+}
+.login.hidden{display:none;}
+.login-card{width:100%;max-width:400px;text-align:center;}
+.login-logo{font-size:46px;margin-bottom:6px;}
+.login-card h1{font-size:30px;font-weight:900;letter-spacing:-.5px;}
+.login-sub{color:var(--dim);margin:6px 0 26px;font-size:16px;font-weight:600;}
+.profiles{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px;}
+.profile{
+  display:flex;flex-direction:column;align-items:center;gap:8px;
+  background:#fff;border:1px solid var(--line);border-radius:18px;padding:18px 10px;
+  cursor:pointer;transition:.15s;box-shadow:0 6px 20px rgba(20,40,80,.06);
+}
+.profile:hover{border-color:var(--accent);transform:translateY(-2px);}
+.profile:active{transform:scale(.97);}
+.profile .ava{
+  width:52px;height:52px;border-radius:50%;display:grid;place-items:center;
+  font-size:22px;font-weight:800;color:#fff;background:linear-gradient(150deg,var(--accent),var(--accent-2));
+}
+.profile .pname{font-weight:700;font-size:15px;}
+.profile.todo{opacity:.5;}
+.profile.todo .ava{background:#c4ccd8;}
+.guest{
+  width:100%;background:var(--soft);border:1px dashed var(--line);border-radius:16px;
+  padding:15px;font-size:15px;font-weight:700;color:var(--text);cursor:pointer;transition:.15s;
+}
+.guest:active{transform:scale(.98);}
+
+/* ═══════════ Modales (mot de passe, aide) ═══════════ */
+.modal{position:fixed;inset:0;z-index:60;display:grid;place-items:center;padding:22px;background:rgba(15,26,43,.45);backdrop-filter:blur(3px);}
+.modal.hidden{display:none;}
+.modal-card{
+  position:relative;width:100%;max-width:380px;background:#fff;border-radius:22px;
+  padding:26px 22px;box-shadow:var(--shadow);text-align:center;animation:pop .2s ease;
+}
+@keyframes pop{from{transform:scale(.94);opacity:0;}}
+.modal-x{position:absolute;top:12px;right:14px;border:none;background:none;font-size:18px;color:var(--dim);cursor:pointer;}
+.modal-ico{font-size:34px;margin-bottom:6px;}
+.modal-card h2{font-size:20px;font-weight:800;margin-bottom:4px;}
+.modal-sub{color:var(--dim);font-size:14px;margin-bottom:14px;}
+.modal-card input{
+  width:100%;background:var(--soft);border:1px solid var(--line);border-radius:13px;
+  padding:14px;font-size:17px;text-align:center;margin-bottom:10px;
+}
+.modal-card input:focus{outline:none;border-color:var(--accent);background:#fff;}
+.modal-card .btn{width:100%;margin-top:6px;}
+.pwd-err{color:#e23744;font-size:13px;font-weight:600;min-height:18px;margin-bottom:4px;}
+.help-steps{text-align:left;margin:0 0 12px;padding-left:22px;color:var(--text);font-size:14px;line-height:1.6;}
+.help-steps a{color:var(--accent);}
+.help-steps code{background:var(--soft2);padding:1px 6px;border-radius:6px;font-size:13px;}
+
+.help-q{
+  width:20px;height:20px;border-radius:50%;border:none;background:var(--accent);color:#fff;
+  font-size:12px;font-weight:800;cursor:pointer;line-height:1;
+}
+
 /* ── Toast ── */
 .toast{
   position:fixed;left:50%;bottom:88px;transform:translateX(-50%);
