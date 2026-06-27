@@ -48,30 +48,41 @@ Tu peux **réutiliser la clé Groq de ton projet Média** : c'est la même.
 
 ---
 
-## 4. Enregistrement des conversations sur GitHub
+## 4. Enregistrement des conversations (Supabase)
 
-Les conversations sont sauvegardées **uniquement sur GitHub** (jamais sur le téléphone/ordinateur),
-exactement comme la logique du projet Média (push via l'API GitHub avec un token).
+Les conversations sont enregistrées dans une **base Supabase dédiée au Traducteur** (distincte de
+Média). **L'utilisateur ne saisit RIEN** : la clé publique `anon` est intégrée à l'app (`docs/config.js`).
+Rien n'est jamais stocké sur le téléphone ni l'ordinateur.
 
-> 🔒 **Confidentialité — important.** Le dépôt `traducteur` (celui de l'app) est **public**
-> car GitHub Pages gratuit l'exige. **Ne mets PAS tes enregistrements dans un dépôt public.**
-> Crée un **dépôt PRIVÉ séparé** (ex. `traducteur-prive`) réservé aux conversations.
-
-**Mise en place :**
-1. Crée un **dépôt PRIVÉ** sur GitHub, ex. `hugokrvl/traducteur-prive`.
-2. Crée un **token fine-grained** : https://github.com/settings/tokens?type=beta →
-   *Generate new token* → **Repository access : Only select repositories** → choisis `traducteur-prive` →
-   *Permissions → Repository permissions → **Contents : Read and write*** → génère et copie le token.
-3. Dans l'app : ⚙️ → section **📼 Enregistrement sur GitHub** → colle le **token**, le **dépôt**
-   (`hugokrvl/traducteur-prive`) et le **dossier** (`enregistrements`) → Enregistrer.
+**Mise en place (une seule fois) :**
+1. Crée un **nouveau projet Supabase** (https://supabase.com → *New project*), ex. `traducteur`.
+2. Crée la table et la règle d'insertion — *SQL Editor* → colle puis *Run* :
+   ```sql
+   create table public.enregistrements (
+     id          bigint generated always as identity primary key,
+     created_at  timestamptz not null default now(),
+     session     text,
+     lang        text,
+     original    text,
+     french      text
+   );
+   alter table public.enregistrements enable row level security;
+   -- la clé anon publique peut UNIQUEMENT insérer (pas lire) → conversations privées
+   create policy "insert anon" on public.enregistrements
+     for insert to anon with check (true);
+   ```
+3. *Project Settings → API* → copie **Project URL** et **anon public**, et mets-les dans
+   `docs/config.js` (`window.SUPABASE_URL` et `window.SUPABASE_ANON_KEY`), puis pousse sur GitHub.
 
 **Fonctionnement :**
-- Un fichier `enregistrements/enregistrement_AAAA-MM-JJ_HH-MM.txt` par session.
-- **Nouveau fichier automatiquement** quand l'**heure change** ou après une **pause** (= nouveau
-  contexte ; durée réglable dans Options avancées, défaut 8 min).
-- Sauvegarde en continu (toutes les ~12 s) + à chaque arrêt. Le bouton **📼** force une sauvegarde
-  et ouvre le dossier des enregistrements sur GitHub.
-- **Aucun token = aucun enregistrement** (rien n'est jamais stocké en local).
+- **Une ligne par phrase** : `created_at`, `session`, `lang`, `original`, `french`.
+- `session` = un libellé `enregistrement_AAAA-MM-JJ_HH-MM` qui **change automatiquement** à chaque
+  changement d'heure ou après une **pause** (= nouveau contexte ; durée réglable, défaut 8 min).
+- Envoi en continu + résilient (si le réseau coupe, la phrase repart ensuite). Le bouton **📼**
+  ouvre tes enregistrements dans le tableau Supabase.
+- 🔒 La clé anon ne peut **qu'insérer**, pas relire → même publique, personne ne peut lire tes
+  conversations avec. Toi, tu les consultes dans le tableau Supabase (connecté).
+- Tant que `config.js` est vide → aucun enregistrement (l'app marche quand même pour la traduction).
 
 ## Réglages utiles (⚙️ → Options avancées)
 

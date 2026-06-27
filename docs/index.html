@@ -49,11 +49,8 @@
     </label>
 
     <div class="field gh-box">
-      <span>📼 Enregistrement sur GitHub <a href="https://github.com/settings/tokens?type=beta" target="_blank" rel="noopener">(token ↗)</a></span>
-      <input type="password" id="githubToken" placeholder="Token GitHub (fine-grained · Contents: write)" autocomplete="off" />
-      <input type="text" id="githubRepo" placeholder="dépôt — ex. hugokrvl/traducteur-prive" autocomplete="off" />
-      <input type="text" id="githubFolder" placeholder="dossier (ex. enregistrements)" autocomplete="off" />
-      <small class="hint">⚠️ Utilise un dépôt <b>PRIVÉ</b>, sinon tes conversations seraient publiques. Laisse vide pour ne rien enregistrer — rien n'est jamais stocké sur le téléphone ni l'ordinateur.</small>
+      <span>📼 Enregistrement des conversations : <b id="recStatus" class="rec-status">—</b></span>
+      <small class="hint">Automatique et privé (base Supabase intégrée à l'app). <b>Aucune saisie de ta part</b> : ni clé, ni token. Rien n'est stocké sur le téléphone ni l'ordinateur. Le bouton 📼 en haut ouvre tes enregistrements.</small>
     </div>
 
     <details class="advanced">
@@ -171,6 +168,7 @@
 
   <div id="toast" class="toast hidden"></div>
 
+  <script src="config.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

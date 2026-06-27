@@ -25,10 +25,6 @@ const DEFAULTS = {
   elevenKey: '',
   elevenVoice: 'XB0fDUnXU5powFXDhCwa',
   elevenModel: 'eleven_turbo_v2_5',
-  githubToken: '',
-  githubRepo: '',
-  githubFolder: 'enregistrements',
-  githubBranch: 'main',
   recGapMin: 8,
   sens: 60,
   speakEnabled: true,
@@ -62,12 +58,12 @@ let ttsCtx = null;                 // contexte audio dédié à la voix premium 
 const elevenQueue = [];            // file de lecture ElevenLabs (1 à la fois, dans l'ordre)
 let elevenPlaying = false;
 let elevenDisabled = false;        // passe à true quand le quota gratuit est épuisé → voix navigateur
-// Enregistrement sur GitHub (aucune copie locale)
-const shaMap = {};                 // chemin de fichier → sha du dernier commit
-let rec = { path: null, content: '', hourKey: null, lastAt: 0 };
-let recTimer = null, recDirty = false;
-let flushChain = Promise.resolve();
-const REC_DEBOUNCE = 12000;
+// Enregistrement sur Supabase (clé publique intégrée — aucune saisie utilisateur)
+const SUPABASE_URL = (window.SUPABASE_URL || '').replace(/\/+$/, '');
+const SUPABASE_ANON_KEY = window.SUPABASE_ANON_KEY || '';
+let rec = { session: null, hourKey: null, lastAt: 0 };   // suivi du « contexte » = 1 session
+const recQueue = [];               // lignes en attente (résilient si le réseau coupe)
+let recPumping = false;
 
 // ───────────────────────────── Raccourcis DOM ──────────────────────────────
 const $ = (id) => document.getElementById(id);
@@ -119,7 +115,7 @@ function stop() {
   setRecording(false);
   setStatus('idle', sttQueue.length ? 'traitement…' : 'prêt');
   meterEl.style.width = '0%';
-  flush(); // sauvegarde finale de l'enregistrement sur GitHub
+  pumpRecord(); // envoie ce qui reste en file (enregistrement Supabase)
 }
 
 function onAudio(e) {
@@ -384,83 +380,60 @@ function addBubble({ language, original, french, skipped }) {
 }
 
 // ============================================================================
-// 4bis. ENREGISTREMENT SUR GITHUB (jamais de copie locale)
-//  - un fichier .txt par session, nommé enregistrement_<date>_<heure>.txt
-//  - nouveau fichier quand l'heure change OU après une longue pause (= nouveau contexte)
-//  - poussé sur le dépôt GitHub via l'API Contents (logique « comme Média »)
+// 4bis. ENREGISTREMENT SUR SUPABASE (clé publique intégrée — zéro config)
+//  - une ligne par phrase : created_at, session, lang, original, french
+//  - "session" = libellé enregistrement_<date>_<heure> qui change à chaque
+//    changement d'heure OU après une longue pause (= nouveau contexte)
+//  - protégé par les règles RLS Supabase (insertion seule via la clé anon)
 // ============================================================================
-function recordingOn() {
-  return !!(settings.githubToken && settings.githubRepo && settings.githubRepo.includes('/'));
-}
+function supabaseOn() { return !!(SUPABASE_URL && SUPABASE_ANON_KEY); }
 
 function recordEntry({ t, language, original, french }) {
-  if (!recordingOn()) return;
+  if (!supabaseOn()) return;
   const hourKey = `${t.getFullYear()}-${t.getMonth()}-${t.getDate()}-${t.getHours()}`;
   const gapMs = rec.lastAt ? t - rec.lastAt : 0;
-  const newFile = !rec.path || hourKey !== rec.hourKey || gapMs > (settings.recGapMin || 8) * 60000;
-  if (newFile) startNewFile(t);
-  const hh = t.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
-  const lang = (LANGS[language] || language || '').replace(/^\S+\s/, '').trim() || '—';
-  rec.content += `[${hh}] ${lang} : ${original}\n→ ${french}\n\n`;
-  rec.lastAt = t; rec.hourKey = hourKey; recDirty = true;
-  clearTimeout(recTimer); recTimer = setTimeout(() => flush(), REC_DEBOUNCE);
+  if (!rec.session || hourKey !== rec.hourKey || gapMs > (settings.recGapMin || 8) * 60000) newSession(t);
+  rec.lastAt = t; rec.hourKey = hourKey;
+  const lang = (LANGS[language] || language || '').replace(/^\S+\s/, '').trim() || (language || '—');
+  recQueue.push({ session: rec.session, lang, original, french, created_at: t.toISOString() });
+  pumpRecord();
 }
 
-function startNewFile(t) {
-  if (rec.path && recDirty) flush();           // on sauve d'abord l'ancien fichier en entier
+function newSession(t) {
   const p = (n) => String(n).padStart(2, '0');
-  const stamp = `${t.getFullYear()}-${p(t.getMonth() + 1)}-${p(t.getDate())}_${p(t.getHours())}-${p(t.getMinutes())}`;
-  const folder = (settings.githubFolder || 'enregistrements').replace(/^\/+|\/+$/g, '');
-  rec.path = (folder ? folder + '/' : '') + `enregistrement_${stamp}.txt`;
-  rec.content = `Traducteur IA — enregistrement du ${t.toLocaleString('fr-FR')}\n\n`;
+  rec.session = `enregistrement_${t.getFullYear()}-${p(t.getMonth() + 1)}-${p(t.getDate())}_${p(t.getHours())}-${p(t.getMinutes())}`;
 }
 
-// Sauve le fichier courant EN ENTIER sur GitHub. Sérialisé (flushChain) pour ne
-// jamais avoir deux PUT concurrents sur le même fichier (sha périmé = 409).
-function flush(manual) {
-  if (!recDirty || !rec.path || !recordingOn()) { if (manual) toast('Rien à enregistrer.'); return flushChain; }
-  recDirty = false; clearTimeout(recTimer);
-  const path = rec.path, content = rec.content;  // snapshot synchrone (avant tout await)
-  flushChain = flushChain
-    .then(() => githubPut(path, content))
-    .then(() => { setStatusDot(true); if (manual) toast('Enregistré sur GitHub ✓'); })
-    .catch((err) => { recDirty = true; setStatusDot(false); toast('GitHub : ' + err.message); });
-  return flushChain;
+// Envoi séquentiel et résilient : si le réseau coupe, la ligne reste en tête de
+// file et repartira au prochain appel → on ne perd jamais une phrase.
+async function pumpRecord() {
+  if (recPumping || !supabaseOn()) return;
+  recPumping = true;
+  while (recQueue.length) {
+    try { await supabaseInsert(recQueue[0]); recQueue.shift(); setStatusDot(true); }
+    catch (err) { setStatusDot(false); toast('Enregistrement : ' + err.message); break; }
+  }
+  recPumping = false;
 }
 
-async function githubPut(path, content) {
-  const [owner, repo] = settings.githubRepo.split('/');
-  const branch = settings.githubBranch || 'main';
-  // 'main' = branche par défaut → on NE l'envoie PAS : GitHub utilise (ou crée) la branche
-  // par défaut tout seul, ce qui marche même sur un dépôt vide. On ne force la branche
-  // que si l'utilisateur en a configuré une autre.
-  const custom = branch && branch !== 'main';
-  const enc = path.split('/').map(encodeURIComponent).join('/');
-  const base = `https://api.github.com/repos/${owner}/${repo}/contents/${enc}`;
-  const headers = { Authorization: 'Bearer ' + settings.githubToken, Accept: 'application/vnd.github+json' };
-  if (shaMap[path] === undefined) {              // le fichier existe-t-il déjà ? (récupère son sha)
-    try { const g = await fetch(base + (custom ? `?ref=${branch}` : ''), { headers }); shaMap[path] = g.ok ? (await g.json()).sha : null; }
-    catch { shaMap[path] = null; }
-  }
-  const body = { message: 'enregistrement ' + path.split('/').pop(), content: utf8ToB64(content) };
-  if (custom) body.branch = branch;
-  if (shaMap[path]) body.sha = shaMap[path];
-  const res = await fetch(base, { method: 'PUT', headers: { ...headers, 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
-  if (!res.ok) {
-    if (res.status === 409 || res.status === 422) delete shaMap[path];  // sha périmé → re-découverte
-    let m = res.status + ''; try { m = (await res.json()).message || m; } catch {}
-    throw new Error(m);
-  }
-  shaMap[path] = (await res.json()).content?.sha || null;
+function supabaseInsert(row) {
+  return fetchRetry(`${SUPABASE_URL}/rest/v1/enregistrements`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      apikey: SUPABASE_ANON_KEY,
+      Authorization: 'Bearer ' + SUPABASE_ANON_KEY,
+      Prefer: 'return=minimal',
+    },
+    body: JSON.stringify(row),
+  });
 }
-function utf8ToB64(s) { return btoa(unescape(encodeURIComponent(s))); }
 
 function openRecordings() {
-  if (!recordingOn()) { openSettings(); toast('Ajoute ton token + dépôt GitHub dans les réglages ⚙️'); return; }
-  flush(true);
-  const [owner, repo] = settings.githubRepo.split('/');
-  const folder = (settings.githubFolder || 'enregistrements').replace(/^\/+|\/+$/g, '');
-  window.open(`https://github.com/${owner}/${repo}/tree/${settings.githubBranch || 'main'}/${folder}`, '_blank');
+  if (!supabaseOn()) { toast('Enregistrement Supabase pas encore configuré.'); return; }
+  pumpRecord(); // tente d'envoyer ce qui reste en file
+  const ref = (SUPABASE_URL.match(/https?:\/\/([^.]+)\./) || [])[1];
+  window.open(ref ? `https://supabase.com/dashboard/project/${ref}/editor` : SUPABASE_URL, '_blank');
 }
 function highlightNums(s) { return s.replace(/(\d[\d  .,]*\d|\d)/g, '<b class="num">$1</b>'); }
 function escapeHtml(s) { return s.replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c])); }
@@ -546,10 +519,9 @@ function fillForm() {
   $('elevenKey').value = settings.elevenKey;
   $('elevenVoice').value = settings.elevenVoice;
   $('elevenModel').value = settings.elevenModel;
-  $('githubToken').value = settings.githubToken;
-  $('githubRepo').value = settings.githubRepo;
-  $('githubFolder').value = settings.githubFolder;
   $('recGap').value = settings.recGapMin; $('gapVal').textContent = settings.recGapMin;
+  $('recStatus').textContent = supabaseOn() ? '✓ activé (Supabase)' : '— non configuré';
+  $('recStatus').className = 'rec-status ' + (supabaseOn() ? 'ok' : '');
   $('rate').value = settings.rate; $('rateVal').textContent = settings.rate;
   $('sens').value = settings.sens; $('sensVal').textContent = settings.sens;
   $('speakEnabled').checked = settings.speakEnabled;
@@ -567,9 +539,6 @@ function readForm() {
   settings.elevenKey = $('elevenKey').value.trim();
   settings.elevenVoice = $('elevenVoice').value;
   settings.elevenModel = $('elevenModel').value;
-  settings.githubToken = $('githubToken').value.trim();
-  settings.githubRepo = $('githubRepo').value.trim().replace(/^https?:\/\/github\.com\//, '').replace(/\.git$/, '');
-  settings.githubFolder = $('githubFolder').value.trim() || 'enregistrements';
   settings.recGapMin = Number($('recGap').value);
   settings.rate = Number($('rate').value);
   settings.sens = Number($('sens').value);
