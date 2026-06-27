@@ -17,6 +17,7 @@ const DEFAULTS = {
   groqKey: '', mistralKey: '',
   provider: 'groq',
   sttModel: 'whisper-large-v3-turbo',
+  srcLang: 'auto',
   groqModel: 'llama-3.1-8b-instant',
   mistralModel: 'mistral-small-latest',
   ttsEngine: 'eleven',
@@ -42,7 +43,7 @@ const TARGET_RATE   = 16000;   // Whisper aime le 16 kHz → upload léger, plus
 const END_SILENCE_MS = 650;    // silence avant de clôturer une phrase
 const MIN_SPEECH_MS  = 280;    // en-dessous = bruit, on ignore
 const MAX_UTT_MS     = 14000;  // phrase trop longue → on coupe quand même
-const PREROLL_FRAMES = 3;      // ~250 ms gardés avant le début de parole
+const PREROLL_FRAMES = 4;      // ~340 ms gardés avant le début de parole (évite de couper le début)
 const CONTINUOUS_MS  = 3000;   // taille des tranches en mode continu
 
 // ───────────────────────────── État runtime ────────────────────────────────
@@ -53,6 +54,7 @@ let collecting = false, curFrames = [], curMs = 0, speechMs = 0, silenceMs = 0;
 let preRoll = [];
 const sttQueue = [];
 let pumping = false;
+let lastSrc = '', lastFr = '';     // contexte (phrase précédente) → traduction plus cohérente
 let selectedVoice = null;
 let ttsCtx = null;                 // contexte audio dédié à la voix premium (ElevenLabs)
 const elevenQueue = [];            // file de lecture ElevenLabs (1 à la fois, dans l'ordre)
@@ -84,7 +86,8 @@ async function start() {
 
   try {
     stream = await navigator.mediaDevices.getUserMedia({
-      audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+      audio: { echoCancellation: false, noiseSuppression: true, autoGainControl: true,
+               channelCount: 1, sampleRate: 48000 },
     });
   } catch (e) { toast('Micro refusé : ' + e.message); return; }
 
@@ -114,6 +117,7 @@ function stop() {
   setRecording(false);
   setStatus('idle', sttQueue.length ? 'Traitement…' : 'Touchez pour écouter');
   recordBtn.style.removeProperty('--lvl');
+  lastSrc = ''; lastFr = '';   // on repart sans contexte à la prochaine session
   pumpRecord(); // envoie ce qui reste en file (enregistrement Supabase)
 }
 
@@ -181,8 +185,8 @@ async function pump() {
     const blob = sttQueue.shift(); updateQueue();
     setStatus('busy', 'traduction…');
     try {
-      const { text, language } = await transcribe(blob);
-      if (!text || !text.trim()) continue;
+      const { text, language, segments } = await transcribe(blob);
+      if (isJunk(text, segments)) continue;   // bruit / silence / hallucination → ignoré
 
       // Garde-fou anti-boucle : si c'est déjà du français, on n'essaie pas de
       // le "traduire" ni de le lire (sinon, sans écouteurs, la voix se traduirait
@@ -190,9 +194,11 @@ async function pump() {
       if (isFrench(language)) { addEntry({ language, original: text, french: text, skipped: true }); continue; }
 
       const french = await translate(text, language);
+      if (!french || french === '-') continue;   // l'IA a jugé le texte inintelligible
       addEntry({ language, original: text, french });
       recordEntry({ t: new Date(), language, original: text, french });
       speak(french);
+      lastSrc = text; lastFr = french;            // mémorise le contexte
     } catch (err) {
       toast('Erreur : ' + err.message);
     }
@@ -208,21 +214,41 @@ async function transcribe(blob) {
   fd.append('model', settings.sttModel);
   fd.append('response_format', 'verbose_json');
   fd.append('temperature', '0');
+  if (settings.srcLang && settings.srcLang !== 'auto') fd.append('language', settings.srcLang);
   const res = await fetchRetry('https://api.groq.com/openai/v1/audio/transcriptions', {
     method: 'POST',
     headers: { Authorization: 'Bearer ' + settings.groqKey },
     body: fd,
   });
   const data = await res.json();
-  return { text: (data.text || '').trim(), language: (data.language || '').toLowerCase() };
+  return { text: (data.text || '').trim(), language: (data.language || '').toLowerCase(), segments: data.segments || [] };
+}
+
+// Whisper "hallucine" sur les bouts NON-parole (silence, bruit, musique) : il invente
+// des phrases types. On les écarte via les probas de non-parole + une liste connue.
+const HALLU = [
+  "merci d'avoir regardé", 'sous-titres', 'sous-titrage', 'amara.org', 'thanks for watching',
+  'thank you for watching', 'please subscribe', 'like and subscribe', 'abonnez-vous',
+  "n'oubliez pas de vous abonner", 'à la prochaine',
+];
+function isJunk(text, segments) {
+  const t = (text || '').toLowerCase().trim();
+  if (!t) return true;
+  if (segments.length && segments.every((s) => (s.no_speech_prob ?? 0) > 0.6)) return true;   // tout = non-parole
+  if (segments.length && segments.every((s) => (s.avg_logprob ?? 0) < -1.1)) return true;     // confiance très basse
+  for (const j of HALLU) { if (t.includes(j) && t.length < j.length + 30) return true; }      // phrase hallucinée connue
+  const words = t.replace(/[^\p{L}\s]/gu, '').split(/\s+/).filter(Boolean);                    // "you you you you"
+  if (words.length >= 4 && new Set(words).size === 1) return true;
+  return false;
 }
 
 const SYSTEM_PROMPT =
-  "Tu es un interprète professionnel en temps réel. Traduis fidèlement le texte fourni en " +
-  "français naturel, fluide et idiomatique. Réponds UNIQUEMENT avec la traduction française : " +
-  "aucun guillemet, aucune explication, aucun préambule, aucune note. Si le texte est déjà en " +
-  "français, renvoie-le tel quel. Préserve le sens, le ton et le registre. Ne complète pas, ne " +
-  "résume pas : traduis exactement ce qui est dit.";
+  "Tu es un interprète professionnel français, précis et fidèle. On te donne un extrait de parole " +
+  "transcrit en direct (parfois une phrase incomplète). Traduis-le en français NATUREL et idiomatique. " +
+  "RÈGLES STRICTES : réponds UNIQUEMENT par la traduction (aucun guillemet, aucune note, aucun préambule) ; " +
+  "traduis le SENS (pas du mot à mot) ; garde le ton et le registre ; si le texte est déjà en français, " +
+  "renvoie-le tel quel ; n'ajoute rien, ne résume pas. Si le texte est vide, inintelligible ou n'est pas " +
+  "une vraie phrase, réponds par un seul tiret : -";
 
 async function translate(text, sourceLang) {
   const isMistral = settings.provider === 'mistral';
@@ -230,10 +256,14 @@ async function translate(text, sourceLang) {
                         : 'https://api.groq.com/openai/v1/chat/completions';
   const key = isMistral ? settings.mistralKey : settings.groqKey;
   if (!key) throw new Error('clé ' + settings.provider + ' manquante');
+  // On donne la phrase précédente (et sa traduction) comme contexte → meilleure cohérence.
+  const messages = [{ role: 'system', content: SYSTEM_PROMPT }];
+  if (lastSrc && lastFr) messages.push({ role: 'user', content: lastSrc }, { role: 'assistant', content: lastFr });
+  messages.push({ role: 'user', content: text });
   const body = {
     model: isMistral ? settings.mistralModel : settings.groqModel,
-    messages: [{ role: 'system', content: SYSTEM_PROMPT }, { role: 'user', content: text }],
-    temperature: 0.2,
+    messages,
+    temperature: 0.1,
     max_tokens: 500,
   };
   const res = await fetchRetry(url, {
@@ -539,6 +569,7 @@ function fillForm() {
   $('mistralKey').value = settings.mistralKey;
   $('provider').value = settings.provider;
   $('sttModel').value = settings.sttModel;
+  $('srcLang').value = settings.srcLang;
   $('groqModel').value = settings.groqModel;
   $('mistralModel').value = settings.mistralModel;
   $('ttsEngine').value = settings.ttsEngine;
@@ -559,6 +590,7 @@ function readForm() {
   settings.mistralKey = $('mistralKey').value.trim();
   settings.provider = $('provider').value;
   settings.sttModel = $('sttModel').value;
+  settings.srcLang = $('srcLang').value;
   settings.groqModel = $('groqModel').value;
   settings.mistralModel = $('mistralModel').value;
   settings.ttsEngine = $('ttsEngine').value;

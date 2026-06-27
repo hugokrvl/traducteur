@@ -115,6 +115,23 @@
             <summary>Options avancées</summary>
 
             <label class="field">
+              <span>Langue parlée (source)</span>
+              <select id="srcLang">
+                <option value="auto">Détection automatique</option>
+                <option value="en">Anglais</option>
+                <option value="es">Espagnol</option>
+                <option value="de">Allemand</option>
+                <option value="it">Italien</option>
+                <option value="pt">Portugais</option>
+                <option value="ar">Arabe</option>
+                <option value="ru">Russe</option>
+                <option value="nl">Néerlandais</option>
+                <option value="zh">Chinois</option>
+              </select>
+              <small class="hint">Si tu sais quelle langue est parlée, la choisir améliore nettement la précision (sinon laisse Auto).</small>
+            </label>
+
+            <label class="field">
               <span>Transcription (Groq Whisper)</span>
               <select id="sttModel">
                 <option value="whisper-large-v3-turbo">turbo (rapide)</option>

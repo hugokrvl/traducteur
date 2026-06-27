@@ -1,7 +1,7 @@
 /* Service worker minimal : met en cache la coquille de l'app pour un lancement
  * instantané et un fonctionnement même hors-ligne (l'UI ; les appels API ont
  * évidemment besoin du réseau). On ne touche jamais aux requêtes API. */
-const CACHE = 'traducteur-v9';
+const CACHE = 'traducteur-v10';
 const SHELL = ['./', './index.html', './style.css', './app.js', './config.js', './profiles.js', './manifest.json', './icon.svg'];
 
 self.addEventListener('install', (e) => {
