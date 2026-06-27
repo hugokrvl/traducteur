@@ -3,168 +3,191 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover" />
-  <meta name="theme-color" content="#0e1116" />
-  <title>Traducteur IA</title>
+  <meta name="theme-color" content="#ffffff" />
+  <title>Traducteur</title>
   <link rel="manifest" href="manifest.json" />
   <link rel="icon" href="icon.svg" type="image/svg+xml" />
   <link rel="apple-touch-icon" href="icon.svg" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
   <meta name="apple-mobile-web-app-title" content="Traducteur" />
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
-  <header class="topbar">
-    <div class="brand">
-      <span class="logo">🎧</span>
-      <span class="title">Traducteur <b>IA</b></span>
+  <div class="shell">
+    <div class="app">
+
+      <!-- ═══════════════ Onglet TRADUIRE ═══════════════ -->
+      <section id="page-translate" class="page active">
+        <div class="seg mode-toggle" role="group" aria-label="Mode">
+          <button class="mode-btn active" data-mode="phrase">Phrase&nbsp;par&nbsp;phrase</button>
+          <button class="mode-btn" data-mode="continuous">Continu</button>
+        </div>
+
+        <div id="subs" class="subs">
+          <div class="hint-empty">
+            <p class="big">Prêt à traduire</p>
+            <p>Branche tes écouteurs, touche le bouton bleu et laisse la personne parler.</p>
+          </div>
+        </div>
+
+        <div class="listen-zone">
+          <button id="record" class="orb" aria-label="Démarrer / Arrêter l'écoute">
+            <span class="ring"></span><span class="ring"></span><span class="ring"></span>
+            <span class="orb-core">
+              <svg class="ic-mic" viewBox="0 0 24 24" width="40" height="40" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 11a7 7 0 0 0 14 0"/><line x1="12" y1="18" x2="12" y2="22"/>
+              </svg>
+              <svg class="ic-stop" viewBox="0 0 24 24" width="34" height="34" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="3"/></svg>
+            </span>
+          </button>
+          <div id="status" class="status-text idle">Touchez pour écouter</div>
+          <div id="queue" class="queue-pill">0</div>
+        </div>
+      </section>
+
+      <!-- ═══════════════ Onglet HISTORIQUE ═══════════════ -->
+      <section id="page-history" class="page">
+        <header class="p-head">
+          <h1>Historique</h1>
+          <button id="clear" class="text-btn">Effacer</button>
+        </header>
+        <div id="history" class="history">
+          <div class="hint-empty"><p>Les phrases de la session apparaîtront ici.</p></div>
+        </div>
+      </section>
+
+      <!-- ═══════════════ Onglet RÉGLAGES ═══════════════ -->
+      <section id="page-settings" class="page">
+        <header class="p-head"><h1>Réglages</h1></header>
+        <div class="settings-scroll">
+
+          <label class="field">
+            <span>Clé API Groq <a href="https://console.groq.com/keys" target="_blank" rel="noopener">(gratuite ↗)</a></span>
+            <input type="password" id="groqKey" placeholder="gsk_..." autocomplete="off" />
+            <small class="hint">Indispensable pour la traduction. Collée une seule fois, gardée sur l'appareil.</small>
+          </label>
+
+          <label class="field">
+            <span>Moteur de traduction</span>
+            <select id="provider">
+              <option value="groq">Groq · Llama (rapide)</option>
+              <option value="mistral">Mistral (qualité)</option>
+            </select>
+          </label>
+
+          <label class="field" id="mistralKeyField" style="display:none">
+            <span>Clé API Mistral <a href="https://console.mistral.ai/api-keys" target="_blank" rel="noopener">(gratuite ↗)</a></span>
+            <input type="password" id="mistralKey" placeholder="..." autocomplete="off" />
+          </label>
+
+          <label class="field">
+            <span>Voix</span>
+            <select id="ttsEngine">
+              <option value="browser">Navigateur (gratuit, illimité)</option>
+              <option value="eleven">ElevenLabs (premium)</option>
+            </select>
+          </label>
+
+          <div class="field eleven-box" data-tts="eleven" style="display:none">
+            <span>ElevenLabs <a href="https://elevenlabs.io/app/settings/api-keys" target="_blank" rel="noopener">(clé ↗)</a></span>
+            <input type="password" id="elevenKey" placeholder="clé API (sk_...)" autocomplete="off" />
+            <select id="elevenVoice">
+              <option value="XB0fDUnXU5powFXDhCwa">Charlotte (féminine)</option>
+              <option value="21m00Tcm4TlvDq8ikWAM">Rachel (féminine)</option>
+              <option value="onwK4e9ZLuTAKqWW03F9">Daniel (masculine)</option>
+              <option value="ErXwobaYiN019PkySvjV">Antoni (masculine)</option>
+            </select>
+            <select id="elevenModel">
+              <option value="eleven_turbo_v2_5">Turbo v2.5 (rapide)</option>
+              <option value="eleven_multilingual_v2">Multilingual v2 (qualité)</option>
+            </select>
+            <small class="hint">Repli automatique sur la voix gratuite si le quota est épuisé.</small>
+          </div>
+
+          <div class="field rec-line">
+            <span>📼 Enregistrement : <b id="recStatus" class="rec-status">—</b></span>
+            <small class="hint">Automatique et privé (Supabase intégré). Aucune saisie de ta part.</small>
+            <button id="btn-export" class="btn ghost small">Voir mes enregistrements</button>
+          </div>
+
+          <details class="advanced">
+            <summary>Options avancées</summary>
+
+            <label class="field">
+              <span>Transcription (Groq Whisper)</span>
+              <select id="sttModel">
+                <option value="whisper-large-v3-turbo">turbo (rapide)</option>
+                <option value="whisper-large-v3">large-v3 (précis)</option>
+              </select>
+            </label>
+
+            <label class="field" data-provider="groq">
+              <span>Modèle Groq</span>
+              <select id="groqModel">
+                <option value="llama-3.1-8b-instant">llama-3.1-8b-instant</option>
+                <option value="llama-3.3-70b-versatile">llama-3.3-70b-versatile</option>
+              </select>
+            </label>
+
+            <label class="field" data-provider="mistral" style="display:none">
+              <span>Modèle Mistral</span>
+              <select id="mistralModel">
+                <option value="mistral-small-latest">mistral-small-latest</option>
+                <option value="mistral-medium-latest">mistral-medium-latest</option>
+              </select>
+            </label>
+
+            <label class="field" data-tts="browser">
+              <span>Voix française (navigateur)</span>
+              <select id="voice"></select>
+            </label>
+
+            <label class="field" data-tts="browser">
+              <span>Vitesse de lecture : <b id="rateVal">1.05</b></span>
+              <input type="range" id="rate" min="0.7" max="1.5" step="0.05" value="1.05" />
+            </label>
+
+            <label class="field">
+              <span>Sensibilité du micro : <b id="sensVal">60</b></span>
+              <input type="range" id="sens" min="0" max="100" step="1" value="60" />
+            </label>
+
+            <label class="field">
+              <span>Nouvel enregistrement après une pause de : <b id="gapVal">8</b> min</span>
+              <input type="range" id="recGap" min="2" max="60" step="1" value="8" />
+            </label>
+
+            <label class="check">
+              <input type="checkbox" id="speakEnabled" checked />
+              <span>Lire la traduction à voix haute</span>
+            </label>
+
+            <button id="testVoice" class="btn ghost">🔊 Tester la voix</button>
+          </details>
+
+          <button id="btn-save" class="btn primary">Enregistrer</button>
+        </div>
+      </section>
+
     </div>
-    <div class="top-actions">
-      <span id="status" class="status idle">prêt</span>
-      <button id="btn-export" class="icon-btn" title="Voir les enregistrements GitHub" aria-label="Enregistrements">📼</button>
-      <button id="btn-settings" class="icon-btn" title="Réglages" aria-label="Réglages">⚙️</button>
-    </div>
-  </header>
 
-  <!-- ───────────────────────── Réglages ───────────────────────── -->
-  <section id="settings" class="settings hidden">
-    <h2>Réglages</h2>
-
-    <label class="field">
-      <span>Clé API Groq <a href="https://console.groq.com/keys" target="_blank" rel="noopener">(gratuite ↗)</a></span>
-      <input type="password" id="groqKey" placeholder="gsk_..." autocomplete="off" />
-    </label>
-
-    <label class="field">
-      <span>Moteur de traduction</span>
-      <select id="provider">
-        <option value="groq">Groq · Llama (rapide, recommandé)</option>
-        <option value="mistral">Mistral (qualité)</option>
-      </select>
-    </label>
-
-    <label class="field" id="mistralKeyField" style="display:none">
-      <span>Clé API Mistral <a href="https://console.mistral.ai/api-keys" target="_blank" rel="noopener">(gratuite ↗)</a></span>
-      <input type="password" id="mistralKey" placeholder="..." autocomplete="off" />
-    </label>
-
-    <div class="field gh-box">
-      <span>📼 Enregistrement des conversations : <b id="recStatus" class="rec-status">—</b></span>
-      <small class="hint">Automatique et privé (base Supabase intégrée à l'app). <b>Aucune saisie de ta part</b> : ni clé, ni token. Rien n'est stocké sur le téléphone ni l'ordinateur. Le bouton 📼 en haut ouvre tes enregistrements.</small>
-    </div>
-
-    <details class="advanced">
-      <summary>Options avancées</summary>
-
-      <label class="field">
-        <span>Modèle de transcription (Groq Whisper)</span>
-        <select id="sttModel">
-          <option value="whisper-large-v3-turbo">whisper-large-v3-turbo (rapide)</option>
-          <option value="whisper-large-v3">whisper-large-v3 (précis)</option>
-        </select>
-      </label>
-
-      <label class="field" data-provider="groq">
-        <span>Modèle de traduction Groq</span>
-        <select id="groqModel">
-          <option value="llama-3.1-8b-instant">llama-3.1-8b-instant (le + rapide)</option>
-          <option value="llama-3.3-70b-versatile">llama-3.3-70b-versatile (meilleure qualité)</option>
-        </select>
-      </label>
-
-      <label class="field" data-provider="mistral" style="display:none">
-        <span>Modèle de traduction Mistral</span>
-        <select id="mistralModel">
-          <option value="mistral-small-latest">mistral-small-latest (rapide)</option>
-          <option value="mistral-medium-latest">mistral-medium-latest (qualité)</option>
-        </select>
-      </label>
-
-      <label class="field">
-        <span>Moteur de voix</span>
-        <select id="ttsEngine">
-          <option value="browser">Navigateur (gratuit, illimité)</option>
-          <option value="eleven">ElevenLabs (premium, quota limité)</option>
-        </select>
-      </label>
-
-      <label class="field" data-tts="browser">
-        <span>Voix française (navigateur)</span>
-        <select id="voice"></select>
-      </label>
-
-      <label class="field" data-tts="browser">
-        <span>Vitesse de lecture : <b id="rateVal">1.05</b></span>
-        <input type="range" id="rate" min="0.7" max="1.5" step="0.05" value="1.05" />
-      </label>
-
-      <div class="field eleven-box" data-tts="eleven" style="display:none">
-        <span>ElevenLabs <a href="https://elevenlabs.io/app/settings/api-keys" target="_blank" rel="noopener">(clé gratuite ↗)</a></span>
-        <input type="password" id="elevenKey" placeholder="clé API ElevenLabs" autocomplete="off" />
-        <select id="elevenVoice">
-          <option value="XB0fDUnXU5powFXDhCwa">Charlotte (féminine)</option>
-          <option value="21m00Tcm4TlvDq8ikWAM">Rachel (féminine)</option>
-          <option value="onwK4e9ZLuTAKqWW03F9">Daniel (masculine)</option>
-          <option value="ErXwobaYiN019PkySvjV">Antoni (masculine)</option>
-        </select>
-        <select id="elevenModel">
-          <option value="eleven_turbo_v2_5">Turbo v2.5 (rapide, multilingue)</option>
-          <option value="eleven_multilingual_v2">Multilingual v2 (qualité max)</option>
-        </select>
-        <small class="hint">⚠️ Quota gratuit ~10 000 caractères/mois (~10 min de voix). Au-delà, repli automatique sur la voix du navigateur.</small>
-      </div>
-
-      <label class="field">
-        <span>Sensibilité du micro : <b id="sensVal">60</b></span>
-        <input type="range" id="sens" min="0" max="100" step="1" value="60" />
-        <small class="hint">Plus haut = capte les voix plus faibles (mais aussi plus de bruit).</small>
-      </label>
-
-      <label class="field">
-        <span>Nouveau fichier après une pause de : <b id="gapVal">8</b> min</span>
-        <input type="range" id="recGap" min="2" max="60" step="1" value="8" />
-        <small class="hint">Un nouveau .txt est aussi créé automatiquement à chaque changement d'heure.</small>
-      </label>
-
-      <label class="check">
-        <input type="checkbox" id="speakEnabled" checked />
-        <span>Lire la traduction à voix haute</span>
-      </label>
-
-      <button id="testVoice" class="btn ghost">🔊 Tester la voix</button>
-    </details>
-
-    <button id="btn-save" class="btn primary">Enregistrer</button>
-    <p class="legal">Ta clé est stockée <b>uniquement sur ton appareil</b> (localStorage) et envoyée seulement à Groq/Mistral. Rien ne passe par un serveur tiers.</p>
-  </section>
-
-  <!-- ───────────────────────── Écran principal ───────────────────────── -->
-  <main id="app">
-    <div class="meter-wrap">
-      <div id="meter" class="meter"></div>
-    </div>
-
-    <div class="mode-toggle" role="group" aria-label="Mode de découpage">
-      <button class="mode-btn active" data-mode="phrase">Phrase par phrase</button>
-      <button class="mode-btn" data-mode="continuous">Continu (~3s)</button>
-    </div>
-
-    <div id="transcript" class="transcript">
-      <div class="empty-state">
-        <p>🎙️ Branche tes écouteurs, appuie sur le bouton, et laisse la personne parler.</p>
-        <p class="dim">La traduction française s'affiche ici et se joue dans tes écouteurs, en continu.</p>
-      </div>
-    </div>
-
-    <div class="dock">
-      <button id="clear" class="icon-btn" title="Effacer" aria-label="Effacer">🗑️</button>
-      <button id="record" class="record" aria-label="Démarrer / Arrêter">
-        <span class="rec-dot"></span>
-        <span class="rec-label">Démarrer</span>
+    <!-- ═══════════════ Barre d'onglets ═══════════════ -->
+    <nav class="tabbar">
+      <button class="tab active" data-page="translate">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 11a7 7 0 0 0 14 0"/><line x1="12" y1="18" x2="12" y2="22"/></svg>
+        <span>Traduire</span>
       </button>
-      <span id="queue" class="queue-badge" title="Phrases en attente">0</span>
-    </div>
-  </main>
+      <button class="tab" data-page="history">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+        <span>Historique</span>
+      </button>
+      <button class="tab" data-page="settings">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="7" x2="20" y2="7"/><circle cx="9" cy="7" r="2.4" fill="#fff"/><line x1="4" y1="17" x2="20" y2="17"/><circle cx="15" cy="17" r="2.4" fill="#fff"/></svg>
+        <span>Réglages</span>
+      </button>
+    </nav>
+  </div>
 
   <div id="toast" class="toast hidden"></div>
 

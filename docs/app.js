@@ -68,10 +68,9 @@ let recPumping = false;
 // ───────────────────────────── Raccourcis DOM ──────────────────────────────
 const $ = (id) => document.getElementById(id);
 const statusEl = $('status');
-const meterEl = $('meter');
-const transcriptEl = $('transcript');
 const queueEl = $('queue');
 const recordBtn = $('record');
+const convo = [];   // historique de la session (écran principal + onglet Historique)
 
 // ============================================================================
 // 1. CAPTURE AUDIO + DÉTECTION DE PAROLE (VAD)
@@ -113,8 +112,8 @@ function stop() {
   try { ctx && ctx.close(); } catch {}
   releaseWakeLock();
   setRecording(false);
-  setStatus('idle', sttQueue.length ? 'traitement…' : 'prêt');
-  meterEl.style.width = '0%';
+  setStatus('idle', sttQueue.length ? 'Traitement…' : 'Touchez pour écouter');
+  recordBtn.style.removeProperty('--lvl');
   pumpRecord(); // envoie ce qui reste en file (enregistrement Supabase)
 }
 
@@ -188,12 +187,12 @@ async function pump() {
       // Garde-fou anti-boucle : si c'est déjà du français, on n'essaie pas de
       // le "traduire" ni de le lire (sinon, sans écouteurs, la voix se traduirait
       // elle-même en boucle).
-      if (isFrench(language)) { addBubble({ language, original: text, french: text, skipped: true }); continue; }
+      if (isFrench(language)) { addEntry({ language, original: text, french: text, skipped: true }); continue; }
 
       const french = await translate(text, language);
-      const bubble = addBubble({ language, original: text, french });
+      addEntry({ language, original: text, french });
       recordEntry({ t: new Date(), language, original: text, french });
-      speak(french, bubble);
+      speak(french);
     } catch (err) {
       toast('Erreur : ' + err.message);
     }
@@ -264,20 +263,20 @@ async function fetchRetry(url, opts, tries = 3) {
 // ============================================================================
 // 3. VOIX (speechSynthesis)
 // ============================================================================
-function speak(text, bubbleEl) {
+function speak(text) {
   if (!settings.speakEnabled || !text) return;
-  if (settings.ttsEngine === 'eleven' && settings.elevenKey && !elevenDisabled) enqueueEleven(text, bubbleEl);
-  else browserSpeak(text, bubbleEl);
+  if (settings.ttsEngine === 'eleven' && settings.elevenKey && !elevenDisabled) enqueueEleven(text);
+  else browserSpeak(text);
 }
 
 // ── Voix du navigateur (gratuite, instantanée) ──
-function browserSpeak(text, bubbleEl) {
+function browserSpeak(text) {
   const u = new SpeechSynthesisUtterance(text);
   u.lang = 'fr-FR';
   if (selectedVoice) u.voice = selectedVoice;
   u.rate = Number(settings.rate) || 1.05;
-  u.onstart = () => bubbleEl && bubbleEl.classList.add('speaking');
-  u.onend = () => bubbleEl && bubbleEl.classList.remove('speaking');
+  u.onstart = () => markSpeaking(true);
+  u.onend = () => markSpeaking(false);
   speechSynthesis.speak(u);
 }
 
@@ -289,22 +288,22 @@ function ensureTtsCtx() {
   } catch {}
   return ttsCtx;
 }
-function enqueueEleven(text, bubbleEl) { elevenQueue.push({ text, bubbleEl }); pumpEleven(); }
+function enqueueEleven(text) { elevenQueue.push(text); pumpEleven(); }
 async function pumpEleven() {
   if (elevenPlaying) return;
   elevenPlaying = true;
   while (elevenQueue.length) {
-    const { text, bubbleEl } = elevenQueue.shift();
+    const text = elevenQueue.shift();
     try {
       const blob = await elevenTTS(text);
-      await playBlob(blob, bubbleEl);
+      await playBlob(blob);
     } catch (err) {
       // Quota gratuit épuisé (401) ou crédits finis → on bascule définitivement
       // sur la voix gratuite du navigateur pour le reste de la session.
       const quota = err.status === 401 || /quota|credit|exceed|unusual/i.test(err.message || '');
       if (quota) { elevenDisabled = true; toast('Quota ElevenLabs épuisé → voix gratuite activée 🔊'); }
       else toast('Voix premium : ' + err.message + ' → repli navigateur');
-      browserSpeak(text, bubbleEl);
+      browserSpeak(text);
     }
   }
   elevenPlaying = false;
@@ -323,18 +322,18 @@ async function elevenTTS(text) {
   });
   return res.blob();
 }
-function playBlob(blob, bubbleEl) {
+function playBlob(blob) {
   return new Promise((resolve) => {
     blob.arrayBuffer()
       .then((arr) => ensureTtsCtx().decodeAudioData(arr))
       .then((audioBuf) => {
         const src = ttsCtx.createBufferSource();
         src.buffer = audioBuf; src.connect(ttsCtx.destination);
-        bubbleEl && bubbleEl.classList.add('speaking');
-        src.onended = () => { bubbleEl && bubbleEl.classList.remove('speaking'); resolve(); };
+        markSpeaking(true);
+        src.onended = () => { markSpeaking(false); resolve(); };
         src.start();
       })
-      .catch(() => { bubbleEl && bubbleEl.classList.remove('speaking'); resolve(); });
+      .catch(() => { markSpeaking(false); resolve(); });
   });
 }
 
@@ -365,18 +364,44 @@ const LANGS = {
 };
 function isFrench(lang) { return (lang || '').includes('french') || (lang || '').startsWith('fr'); }
 
-function addBubble({ language, original, french, skipped }) {
-  if (transcriptEl.querySelector('.empty-state')) transcriptEl.innerHTML = '';
+function badgeFor(language) { return LANGS[language] || (language ? '🌐 ' + language : '🌐'); }
+function markSpeaking(on) { const el = document.querySelector('#subs .sub.latest'); if (el) el.classList.toggle('speaking', on); }
+
+function addEntry({ language, original, french, skipped }) {
+  const entry = { t: new Date(), language, original, french, skipped };
+  convo.push(entry);
+  renderSubs();
+  appendHistory(entry);
+  return entry;
+}
+
+// Écran principal : la dernière phrase en GROS + les précédentes en petit, fondu.
+function renderSubs() {
+  const subs = $('subs');
+  const last = convo.slice(-4);
+  if (!last.length) return;
+  subs.innerHTML = last.map((e, i) => {
+    const cls = 'sub' + (i === last.length - 1 ? ' latest' : '') + (e.skipped ? ' skip' : '');
+    return `<div class="${cls}">` +
+      `<div class="sub-badge">${badgeFor(e.language)}</div>` +
+      `<div class="sub-fr">${highlightNums(escapeHtml(e.french))}</div>` +
+      `<div class="sub-src">${escapeHtml(e.original)}</div></div>`;
+  }).join('');
+  subs.scrollTop = subs.scrollHeight;
+}
+
+// Onglet Historique : une carte par phrase (ajout incrémental).
+function appendHistory(e) {
+  const h = $('history');
+  const empty = h.querySelector('.hint-empty'); if (empty) empty.remove();
+  const hh = e.t.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
   const div = document.createElement('div');
-  div.className = 'bubble' + (skipped ? ' skipped' : '');
-  const badge = LANGS[language] || (language ? '🌐 ' + language : '🌐');
+  div.className = 'h-card' + (e.skipped ? ' skip' : '');
   div.innerHTML =
-    `<div class="src"><span class="lang-badge">${badge}</span></div>` +
-    `<p class="original">${escapeHtml(original)}</p>` +
-    `<p class="french">${highlightNums(escapeHtml(french))}</p>`;
-  transcriptEl.appendChild(div);
-  transcriptEl.scrollTop = transcriptEl.scrollHeight;
-  return div;
+    `<div class="h-top"><span class="h-badge">${badgeFor(e.language)}</span><span class="h-time">${hh}</span></div>` +
+    `<div class="h-fr">${highlightNums(escapeHtml(e.french))}</div>` +
+    `<div class="h-src">${escapeHtml(e.original)}</div>`;
+  h.appendChild(div); h.scrollTop = h.scrollHeight;
 }
 
 // ============================================================================
@@ -479,12 +504,13 @@ function encodeWAV(samples, rate) {
 // 6. PETITS HELPERS UI / SYSTÈME
 // ============================================================================
 function sleep(ms) { return new Promise((r) => setTimeout(r, ms)); }
-function setStatus(cls, txt) { statusEl.className = 'status ' + cls; statusEl.textContent = txt; }
-function setRecording(on) {
-  recordBtn.classList.toggle('on', on);
-  recordBtn.querySelector('.rec-label').textContent = on ? 'Arrêter' : 'Démarrer';
+function setStatus(cls, txt) { statusEl.className = 'status-text ' + cls; statusEl.textContent = txt; }
+function setRecording(on) { recordBtn.classList.toggle('listening', on); }
+function updateMeter(rms) { recordBtn.style.setProperty('--lvl', Math.min(1, rms * 6).toFixed(2)); }
+function switchPage(name) {
+  document.querySelectorAll('.page').forEach((p) => p.classList.toggle('active', p.id === 'page-' + name));
+  document.querySelectorAll('.tab').forEach((t) => t.classList.toggle('active', t.dataset.page === name));
 }
-function updateMeter(rms) { meterEl.style.width = Math.min(100, rms * 600) + '%'; }
 function setStatusDot(ok) { const b = $('btn-export'); if (b) b.style.color = ok ? 'var(--ok)' : ''; }
 function updateQueue() {
   const n = sttQueue.length + (pumping ? 1 : 0);
@@ -507,7 +533,7 @@ document.addEventListener('visibilitychange', () => {
 // ============================================================================
 // 7. RÉGLAGES — lecture / écriture du formulaire
 // ============================================================================
-function openSettings() { $('settings').classList.remove('hidden'); }
+function openSettings() { switchPage('settings'); }
 function fillForm() {
   $('groqKey').value = settings.groqKey;
   $('mistralKey').value = settings.mistralKey;
@@ -572,8 +598,8 @@ document.querySelectorAll('.mode-btn').forEach((b) => b.addEventListener('click'
   resetUtterance();
 }));
 
-$('btn-settings').addEventListener('click', () => $('settings').classList.toggle('hidden'));
-$('btn-save').addEventListener('click', () => { readForm(); $('settings').classList.add('hidden'); toast('Réglages enregistrés ✓'); });
+document.querySelectorAll('.tab').forEach((t) => t.addEventListener('click', () => switchPage(t.dataset.page)));
+$('btn-save').addEventListener('click', () => { readForm(); toast('Réglages enregistrés ✓'); switchPage('translate'); });
 $('provider').addEventListener('change', () => { settings.provider = $('provider').value; syncProviderUI(); });
 $('ttsEngine').addEventListener('change', () => { settings.ttsEngine = $('ttsEngine').value; syncTtsUI(); });
 $('rate').addEventListener('input', (e) => $('rateVal').textContent = e.target.value);
@@ -590,8 +616,10 @@ $('testVoice').addEventListener('click', () => {
 $('btn-export').addEventListener('click', openRecordings);
 $('recGap') && $('recGap').addEventListener('input', (e) => $('gapVal').textContent = e.target.value);
 $('clear').addEventListener('click', () => {
-  // efface seulement l'écran ; l'enregistrement GitHub n'est pas touché
-  transcriptEl.innerHTML = '<div class="empty-state"><p>🎙️ Prêt. Appuie sur Démarrer.</p></div>';
+  // efface l'écran et l'historique de session ; les enregistrements Supabase ne sont pas touchés
+  convo.length = 0;
+  $('history').innerHTML = '<div class="hint-empty"><p>Les phrases de la session apparaîtront ici.</p></div>';
+  $('subs').innerHTML = '<div class="hint-empty"><p class="big">Prêt à traduire</p><p>Touche le bouton bleu et laisse la personne parler.</p></div>';
 });
 
 // ───────────────────────────── Démarrage ───────────────────────────────────

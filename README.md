@@ -42,9 +42,12 @@ Tu peux **réutiliser la clé Groq de ton projet Média** : c'est la même.
 ## 3. Utiliser sur iPhone
 
 1. Ouvre l'URL dans **Safari**.
-2. Appuie sur **⚙️** → colle ta **clé Groq** → **Enregistrer**.
+2. Onglet **Réglages** (en bas) → colle ta **clé Groq** → **Enregistrer**.
 3. **Partager → « Sur l'écran d'accueil »** pour l'installer comme une app.
-4. Branche tes **écouteurs**, appuie sur **Démarrer**, autorise le micro. C'est parti 🎉
+4. Onglet **Traduire**, branche tes **écouteurs**, touche le **bouton bleu**, autorise le micro. C'est parti 🎉
+
+> Interface : 3 onglets en bas — **Traduire** (le bouton animé + la traduction en grand),
+> **Historique** (les phrases de la session), **Réglages**. Thème clair, responsive tel + ordi.
 
 ---
 
