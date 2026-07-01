@@ -64,6 +64,11 @@ body{
   padding:8px 16px;border-radius:999px;cursor:pointer;transition:.18s;white-space:nowrap;
 }
 .mode-btn.active{background:var(--bg);color:var(--accent);box-shadow:0 2px 8px rgba(20,40,80,.10);}
+.src-btn{
+  border:none;background:none;color:var(--dim);font-size:13px;font-weight:700;
+  padding:8px 16px;border-radius:999px;cursor:pointer;transition:.18s;white-space:nowrap;
+}
+.src-btn.active{background:var(--bg);color:var(--accent);box-shadow:0 2px 8px rgba(20,40,80,.10);}
 
 .subs{
   flex:1;overflow-y:auto;display:flex;flex-direction:column;justify-content:flex-end;

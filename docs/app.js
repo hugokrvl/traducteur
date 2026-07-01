@@ -48,6 +48,7 @@ const CONTINUOUS_MS  = 3000;   // taille des tranches en mode continu
 
 // ───────────────────────────── État runtime ────────────────────────────────
 let mode = 'phrase';
+let audioSource = 'mic';    // 'mic' (téléphone) ou 'system' (son de l'ordi via partage d'écran)
 let running = false;
 let ctx, stream, source, processor, wakeLock = null;
 let collecting = false, curFrames = [], curMs = 0, speechMs = 0, silenceMs = 0;
@@ -85,11 +86,29 @@ async function start() {
   ensureTtsCtx();
 
   try {
-    stream = await navigator.mediaDevices.getUserMedia({
-      audio: { echoCancellation: false, noiseSuppression: true, autoGainControl: true,
-               channelCount: 1, sampleRate: 48000 },
-    });
-  } catch (e) { toast('Micro refusé : ' + e.message); return; }
+    if (audioSource === 'system') {
+      // Capture du son de l'ordinateur (onglet ou écran) — ordinateur Chrome/Edge uniquement.
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) {
+        toast("Le « son de l'ordi » ne marche que sur ordinateur (Chrome/Edge)."); return;
+      }
+      stream = await navigator.mediaDevices.getDisplayMedia({
+        video: true,   // Chrome exige une piste vidéo ; on la désactive juste après
+        audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false },
+      });
+      stream.getVideoTracks().forEach((t) => { t.enabled = false; });   // on ne garde que le son
+      if (!stream.getAudioTracks().length) {
+        stream.getTracks().forEach((t) => t.stop());
+        toast("Aucun son partagé. Recommence et coche « Partager l'audio » dans la fenêtre de partage."); return;
+      }
+      // si l'utilisateur arrête le partage depuis la barre de Chrome → on stoppe proprement
+      stream.getAudioTracks()[0].addEventListener('ended', () => { if (running) stop(); });
+    } else {
+      stream = await navigator.mediaDevices.getUserMedia({
+        audio: { echoCancellation: false, noiseSuppression: true, autoGainControl: true,
+                 channelCount: 1, sampleRate: 48000 },
+      });
+    }
+  } catch (e) { toast((audioSource === 'system' ? 'Partage refusé : ' : 'Micro refusé : ') + e.message); return; }
 
   ctx = new (window.AudioContext || window.webkitAudioContext)();
   await ctx.resume();
@@ -679,6 +698,14 @@ document.querySelectorAll('.mode-btn').forEach((b) => b.addEventListener('click'
   b.classList.add('active');
   mode = b.dataset.mode;
   resetUtterance();
+}));
+
+document.querySelectorAll('.src-btn').forEach((b) => b.addEventListener('click', () => {
+  if (running) { toast('Arrête l’écoute avant de changer de source.'); return; }
+  document.querySelectorAll('.src-btn').forEach((x) => x.classList.remove('active'));
+  b.classList.add('active');
+  audioSource = b.dataset.source;
+  if (audioSource === 'system') toast("Astuce : partage l'ONGLET de la vidéo (pas tout l'écran) pour éviter l'écho. 🎧");
 }));
 
 document.querySelectorAll('.tab').forEach((t) => t.addEventListener('click', () => switchPage(t.dataset.page)));

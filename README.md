@@ -12,6 +12,8 @@ Une web-app **100 % gratuite, sans serveur**, qui écoute la personne en face de
   même pendant que la voix française parle. Les phrases sont mises en file et traduites dans l'ordre.
 - **Latence ~1,5 à 3 s** après la fin de chaque phrase.
 - **Deux modes** : *Phrase par phrase* (attend une pause, fiable — par défaut) ou *Continu (~3 s)* (plus réactif).
+- **Deux sources** : *🎤 Micro* (personne en face, sur le téléphone) ou *💻 Son de l'ordi* (vidéos/visio,
+  capture directe du son d'un onglet/écran via `getDisplayMedia` — **ordinateur Chrome/Edge uniquement**).
 - **Voix premium par défaut** (ElevenLabs) avec **repli automatique** sur la voix gratuite du
   navigateur dès que le quota gratuit est épuisé.
 - **Enregistrement automatique sur GitHub** : chaque conversation est sauvegardée dans un fichier
