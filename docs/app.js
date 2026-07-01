@@ -42,7 +42,7 @@ function save() { localStorage.setItem('traducteur', JSON.stringify(settings)); 
 const TARGET_RATE   = 16000;   // Whisper aime le 16 kHz → upload léger, plus rapide
 const END_SILENCE_MS = 650;    // silence avant de clôturer une phrase
 const MIN_SPEECH_MS  = 280;    // en-dessous = bruit, on ignore
-const MAX_UTT_MS     = 14000;  // phrase trop longue → on coupe quand même
+const MAX_UTT_MS     = 9000;   // phrase trop longue → on coupe (plus court = moins de latence)
 const PREROLL_FRAMES = 4;      // ~340 ms gardés avant le début de parole (évite de couper le début)
 const CONTINUOUS_MS  = 3000;   // taille des tranches en mode continu
 
@@ -61,6 +61,7 @@ let ttsCtx = null;                 // contexte audio dédié à la voix premium 
 const elevenQueue = [];            // file de lecture ElevenLabs (1 à la fois, dans l'ordre)
 let elevenPlaying = false;
 let elevenDisabled = false;        // passe à true quand le quota gratuit est épuisé → voix navigateur
+let speakPending = 0;              // phrases en attente de lecture (voix navigateur) → anti-retard
 // Enregistrement sur Supabase (clé publique intégrée — aucune saisie utilisateur)
 const SUPABASE_URL = (window.SUPABASE_URL || '').replace(/\/+$/, '');
 const SUPABASE_ANON_KEY = window.SUPABASE_ANON_KEY || '';
@@ -134,7 +135,10 @@ function stop() {
   try { ctx && ctx.close(); } catch {}
   releaseWakeLock();
   setRecording(false);
-  setStatus('idle', sttQueue.length ? 'Traitement…' : 'Touchez pour écouter');
+  // Stop = on coupe tout de suite (plus de traduction/voix en retard qui continue)
+  sttQueue.length = 0; elevenQueue.length = 0; speakPending = 0;
+  try { speechSynthesis.cancel(); } catch {}
+  setStatus('idle', 'Touchez pour écouter');
   recordBtn.style.removeProperty('--lvl');
   lastSrc = ''; lastFr = '';   // on repart sans contexte à la prochaine session
   pumpRecord(); // envoie ce qui reste en file (enregistrement Supabase)
@@ -187,6 +191,7 @@ function finalizeUtterance() {
   const ds = downsample(merged, ctx.sampleRate, TARGET_RATE);
   const blob = encodeWAV(ds, TARGET_RATE);
   sttQueue.push(blob);
+  if (sttQueue.length > 3) sttQueue.splice(0, sttQueue.length - 3);   // en retard → on jette l'audio ancien (reste "en direct")
   updateQueue();
   pump();
 }
@@ -320,12 +325,14 @@ function speak(text) {
 
 // ── Voix du navigateur (gratuite, instantanée) ──
 function browserSpeak(text) {
+  if (speakPending > 2) { speechSynthesis.cancel(); speakPending = 0; }   // trop en retard → au plus récent
   const u = new SpeechSynthesisUtterance(text);
   u.lang = 'fr-FR';
   if (selectedVoice) u.voice = selectedVoice;
-  u.rate = Number(settings.rate) || 1.05;
+  u.rate = Number(settings.rate) || 1.0;
   u.onstart = () => markSpeaking(true);
-  u.onend = () => markSpeaking(false);
+  u.onend = () => { markSpeaking(false); speakPending = Math.max(0, speakPending - 1); };
+  speakPending++;
   speechSynthesis.speak(u);
 }
 
@@ -337,7 +344,11 @@ function ensureTtsCtx() {
   } catch {}
   return ttsCtx;
 }
-function enqueueEleven(text) { elevenQueue.push(text); pumpEleven(); }
+function enqueueEleven(text) {
+  elevenQueue.push(text);
+  while (elevenQueue.length > 2) elevenQueue.shift();   // en retard → on saute au plus récent
+  pumpEleven();
+}
 async function pumpEleven() {
   if (elevenPlaying) return;
   elevenPlaying = true;
