@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="robots" content="noindex, nofollow" />
+  <meta name="theme-color" content="#ffffff" />
+  <title>Mes enregistrements — Traducteur</title>
+  <style>
+    :root{--bg:#fff;--frame:#eef2f9;--soft:#f4f7fb;--text:#0f1a2b;--dim:#6c7689;--line:#e7ebf2;
+      --accent:#1f7bff;--accent-2:#5aa2ff;--accent-soft:#e9f1ff;--ok:#12b66a;--shadow:0 10px 40px rgba(20,40,80,.10);}
+    *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;}
+    body{background:var(--frame);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;min-height:100dvh;}
+    a{color:var(--accent);}
+
+    /* Connexion */
+    .login{min-height:100dvh;display:grid;place-items:center;padding:24px;
+      background:radial-gradient(1000px 520px at 80% -10%, var(--accent-soft) 0%, rgba(233,241,255,0) 55%),linear-gradient(180deg,#fff 0%,#eef3fb 100%);}
+    .login-card{width:100%;max-width:380px;text-align:center;}
+    .logo{font-size:44px;}
+    h1{font-size:26px;font-weight:900;letter-spacing:-.4px;margin-top:4px;}
+    .sub{color:var(--dim);font-weight:600;margin:6px 0 22px;}
+    input{width:100%;background:var(--soft);border:1px solid var(--line);border-radius:13px;padding:14px;font-size:16px;margin-bottom:10px;text-align:center;}
+    input:focus{outline:none;border-color:var(--accent);background:#fff;}
+    .btn{width:100%;border:none;border-radius:13px;padding:14px;font-size:15px;font-weight:700;cursor:pointer;background:var(--accent);color:#fff;box-shadow:0 8px 20px rgba(31,123,255,.3);}
+    .btn:active{transform:scale(.98);}
+    .btn.ghost{background:var(--soft);color:var(--text);box-shadow:none;}
+    .err{color:#e23744;font-weight:600;font-size:13px;min-height:18px;margin-bottom:6px;}
+
+    /* Journal */
+    .app{max-width:760px;margin:0 auto;min-height:100dvh;background:var(--bg);}
+    .top{position:sticky;top:0;z-index:5;background:rgba(255,255,255,.92);backdrop-filter:blur(10px);
+      border-bottom:1px solid var(--line);padding:14px 18px;display:flex;flex-direction:column;gap:10px;}
+    .top-row{display:flex;align-items:center;justify-content:space-between;gap:10px;}
+    .top h2{font-size:19px;font-weight:800;}
+    .actions{display:flex;gap:8px;}
+    .mini{border:1px solid var(--line);background:var(--soft);border-radius:10px;padding:8px 12px;font-size:13px;font-weight:700;cursor:pointer;color:var(--text);}
+    .search{width:100%;background:var(--soft);border:1px solid var(--line);border-radius:11px;padding:11px 13px;font-size:15px;}
+    .search:focus{outline:none;border-color:var(--accent);background:#fff;}
+
+    .list{padding:16px 18px 40px;display:flex;flex-direction:column;gap:20px;}
+    .session h3{font-size:14px;font-weight:800;color:var(--accent);margin-bottom:10px;display:flex;align-items:center;gap:8px;}
+    .session h3 .count{color:var(--dim);font-weight:600;font-size:12px;}
+    .card{background:var(--soft);border:1px solid var(--line);border-radius:14px;padding:12px 14px;margin-bottom:10px;}
+    .card .meta{display:flex;justify-content:space-between;margin-bottom:6px;}
+    .badge{font-size:11px;font-weight:700;color:var(--accent);background:var(--accent-soft);padding:2px 9px;border-radius:999px;}
+    .time{font-size:12px;color:var(--dim);}
+    .fr{font-size:17px;font-weight:700;line-height:1.4;}
+    .src{font-size:13px;color:var(--dim);margin-top:4px;}
+    .empty{color:var(--dim);text-align:center;padding:50px 20px;line-height:1.6;}
+    .hidden{display:none;}
+  </style>
+</head>
+<body>
+  <!-- ── Connexion ── -->
+  <div id="login" class="login">
+    <div class="login-card">
+      <div class="logo">🗂️</div>
+      <h1>Mes enregistrements</h1>
+      <p class="sub">Espace privé — connexion requise</p>
+      <input type="email" id="email" placeholder="Email" autocomplete="username" autocapitalize="none" />
+      <input type="password" id="password" placeholder="Mot de passe" autocomplete="current-password" />
+      <p id="err" class="err"></p>
+      <button id="go" class="btn">Se connecter</button>
+    </div>
+  </div>
+
+  <!-- ── Journal ── -->
+  <div id="app" class="app hidden">
+    <div class="top">
+      <div class="top-row">
+        <h2>🗂️ Enregistrements</h2>
+        <div class="actions">
+          <button id="dl" class="mini">⬇︎ .txt</button>
+          <button id="logout" class="mini">Déconnexion</button>
+        </div>
+      </div>
+      <input id="search" class="search" placeholder="Rechercher dans les conversations…" />
+    </div>
+    <div id="list" class="list"><div class="empty">Chargement…</div></div>
+  </div>
+
+  <script src="config.js"></script>
+  <script>
+    const $ = (id) => document.getElementById(id);
+    const URLB = (window.SUPABASE_URL || '').replace(/\/+$/, '');
+    const KEY = window.SUPABASE_ANON_KEY || '';
+    let ROWS = [];
+
+    const LANGS = { english:'🇬🇧 Anglais', french:'🇫🇷 Français', spanish:'🇪🇸 Espagnol', german:'🇩🇪 Allemand',
+      italian:'🇮🇹 Italien', portuguese:'🇵🇹 Portugais', arabic:'🇸🇦 Arabe', russian:'🇷🇺 Russe',
+      chinese:'🇨🇳 Chinois', japanese:'🇯🇵 Japonais', dutch:'🇳🇱 Néerlandais', turkish:'🇹🇷 Turc' };
+    const esc = (s) => (s || '').replace(/[&<>]/g, (c) => ({ '&':'&amp;','<':'&lt;','>':'&gt;' }[c]));
+    const token = () => sessionStorage.getItem('tr_view_token');
+
+    async function login() {
+      $('err').textContent = '';
+      const email = $('email').value.trim(), password = $('password').value;
+      if (!email || !password) return;
+      try {
+        const res = await fetch(`${URLB}/auth/v1/token?grant_type=password`, {
+          method: 'POST',
+          headers: { apikey: KEY, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email, password }),
+        });
+        const data = await res.json();
+        if (!res.ok || !data.access_token) throw new Error(data.error_description || data.msg || 'Identifiants incorrects');
+        sessionStorage.setItem('tr_view_token', data.access_token);
+        showApp();
+      } catch (e) { $('err').textContent = e.message; }
+    }
+
+    async function load() {
+      try {
+        const res = await fetch(`${URLB}/rest/v1/enregistrements?select=*&order=created_at.asc`, {
+          headers: { apikey: KEY, Authorization: 'Bearer ' + token() },
+        });
+        if (res.status === 401) { logout(); return; }
+        if (!res.ok) throw new Error('Lecture impossible (' + res.status + ')');
+        ROWS = await res.json();
+        render(ROWS);
+      } catch (e) { $('list').innerHTML = `<div class="empty">${esc(e.message)}</div>`; }
+    }
+
+    function render(rows) {
+      if (!rows.length) { $('list').innerHTML = '<div class="empty">Aucun enregistrement pour l’instant.</div>'; return; }
+      const bySession = {};
+      for (const r of rows) (bySession[r.session || '—'] ||= []).push(r);
+      // sessions les plus récentes en haut
+      const names = Object.keys(bySession).sort((a, b) =>
+        new Date(bySession[b][0].created_at) - new Date(bySession[a][0].created_at));
+      $('list').innerHTML = names.map((name) => {
+        const items = bySession[name];
+        const cards = items.map((r) => {
+          const t = new Date(r.created_at).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+          const badge = LANGS[r.lang && r.lang.toLowerCase()] || (r.lang || '🌐');
+          return `<div class="card"><div class="meta"><span class="badge">${esc(badge)}</span><span class="time">${t}</span></div>` +
+            `<div class="fr">${esc(r.french)}</div><div class="src">${esc(r.original)}</div></div>`;
+        }).join('');
+        const day = new Date(items[0].created_at).toLocaleString('fr-FR', { dateStyle: 'medium', timeStyle: 'short' });
+        return `<div class="session"><h3>${esc(name)} <span class="count">· ${items.length} phrase(s) · ${day}</span></h3>${cards}</div>`;
+      }).join('');
+    }
+
+    function doSearch() {
+      const q = $('search').value.trim().toLowerCase();
+      if (!q) return render(ROWS);
+      render(ROWS.filter((r) => (r.original + ' ' + r.french).toLowerCase().includes(q)));
+    }
+
+    function exportTxt() {
+      if (!ROWS.length) return;
+      const bySession = {};
+      for (const r of ROWS) (bySession[r.session || '—'] ||= []).push(r);
+      let out = '';
+      for (const name of Object.keys(bySession)) {
+        out += `=== ${name} ===\n\n`;
+        for (const r of bySession[name]) {
+          const t = new Date(r.created_at).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+          const lang = (LANGS[r.lang && r.lang.toLowerCase()] || r.lang || '').replace(/^\S+\s/, '').trim() || '—';
+          out += `[${t}] ${lang} : ${r.original}\n→ ${r.french}\n\n`;
+        }
+      }
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(new Blob([out], { type: 'text/plain;charset=utf-8' }));
+      a.download = 'enregistrements-' + new Date().toISOString().slice(0, 10) + '.txt';
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+    }
+
+    function showApp() { $('login').classList.add('hidden'); $('app').classList.remove('hidden'); load(); }
+    function logout() { sessionStorage.removeItem('tr_view_token'); $('app').classList.add('hidden'); $('login').classList.remove('hidden'); }
+
+    $('go').addEventListener('click', login);
+    $('password').addEventListener('keydown', (e) => { if (e.key === 'Enter') login(); });
+    $('email').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('password').focus(); });
+    $('logout').addEventListener('click', logout);
+    $('dl').addEventListener('click', exportTxt);
+    $('search').addEventListener('input', doSearch);
+
+    if (!URLB || !KEY) { $('err').textContent = 'Config Supabase manquante (config.js).'; }
+    else if (token()) showApp();
+  </script>
+</body>
+</html>
